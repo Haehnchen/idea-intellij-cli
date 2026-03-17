@@ -1,0 +1,106 @@
+<!-- Plugin Configuration File: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN, cannot be changed between the plugin versions. -->
+    <id>de.espend.intellij.cli</id>
+
+    <!-- Public plugin name should be written in Title Case.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-name -->
+    <name>Agent CLI</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor url="https://github.com/espend">espend</vendor>
+
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-description -->
+    <description><![CDATA[
+        Programmatically control IntelliJ IDEA (and other JetBrains IDEs) via a CLI and HTTP API.
+        Useful for automation, scripting, and integrations with AI assistants like Claude Code.<br>
+        <br>
+        The plugin starts an HTTP server inside your JetBrains IDE. A companion CLI binary talks to
+        that server, letting you run commands and Kotlin scripts with full access to the IntelliJ API.<br>
+        <br>
+        <b>CLI Binary</b><br>
+        Download or build the CLI from
+        <a href="https://github.com/Haehnchen/idea-intellij-cli">github.com/Haehnchen/idea-intellij-cli</a>:<br>
+        <ul>
+            <li><code>cd cli &amp;&amp; go build -o intellij-cli</code> — build from source</li>
+            <li><code>make install</code> — build and install to ~/.local/bin</li>
+        </ul>
+        <br>
+        <b>CLI Usage</b><br>
+        <ul>
+            <li><code>intellij-cli health</code> — Check server status</li>
+            <li><code>intellij-cli projects</code> — List open projects</li>
+            <li><code>intellij-cli plugins</code> — List installed plugins</li>
+            <li><code>intellij-cli exec -c "println(project.name)"</code> — Execute inline Kotlin code</li>
+            <li><code>intellij-cli exec -f &lt;script&gt;</code> — Execute a .kt script</li>
+            <li><code>intellij-cli actions</code> — List available action scripts</li>
+        </ul>
+        <br>
+        <b>AI Agent Skill Installation</b><br>
+        If you use Claude Code or another agent that supports skills, install the skill so the agent
+        knows how to use the CLI:<br>
+        <ul>
+            <li><code>intellij-cli skill project-claude</code> — this project only (.claude/skills/)</li>
+            <li><code>intellij-cli skill global-claude</code> — all projects (~/.claude/skills/)</li>
+            <li><code>intellij-cli skill project</code> — other agents, this project (.agents/skills/)</li>
+            <li><code>intellij-cli skill global</code> — other agents, all projects (~/.agents/skills/)</li>
+        </ul>
+        <br>
+        <b>Writing Custom Scripts</b><br>
+        Scripts run inside the IDE with full access to IntelliJ APIs. Available bindings:<br>
+        <ul>
+            <li><code>project</code> — Current IntelliJ project</li>
+            <li><code>application</code> — IntelliJ Application instance</li>
+            <li><code>readAction { }</code> — Run code in a read action</li>
+            <li><code>writeAction { }</code> — Run code in a write action</li>
+            <li><code>println(msg)</code> — Print output back to the CLI</li>
+        </ul>
+        <br>
+        <b>Multiple IDEs &amp; Projects</b><br>
+        The IDE and project are auto-detected from the current working directory. If multiple IDEs
+        or projects are running, pass the port or project path explicitly:<br>
+        <code>intellij-cli -P 8571 action diagnostics file=src/Foo.kt</code><br>
+        <br>
+        <b>IDE-Specific Default Ports</b><br>
+        IntelliJ IDEA: 8568, Android Studio: 8569, PyCharm: 8570, WebStorm: 8571,
+        GoLand: 8572, PhpStorm: 8573, RubyMine: 8574, CLion: 8575, RustRover: 8576,
+        DataGrip: 8577, Aqua: 8578, DataSpell: 8579, Rider: 8580. Other IDEs: 8599<br>
+        <br>
+        <b>REST API Endpoints</b><br>
+        <ul>
+            <li><code>GET  /health</code> — Server health check</li>
+            <li><code>GET  /projects</code> — List open projects</li>
+            <li><code>POST /execute</code> — Execute Kotlin code</li>
+            <li><code>POST /action/discover</code> — Discover available actions</li>
+        </ul>
+        <br>
+        <b>Note:</b> Server is disabled by default. Enable it in Settings → Tools → Agent CLI.
+    ]]></description>
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+
+
+    <!-- Application-level listeners -->
+    <applicationListeners>
+        <listener class="de.espend.intellij.cli.IdeStartupListener"
+                  topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+    </applicationListeners>
+
+    <!-- Extensions -->
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Application Services -->
+        <applicationService serviceImplementation="de.espend.intellij.cli.services.ProjectService"/>
+        <applicationService serviceImplementation="de.espend.intellij.cli.execution.CodeExecutor"/>
+        <applicationService serviceImplementation="de.espend.intellij.cli.settings.PluginSettings"/>
+
+        <!-- Settings -->
+        <applicationConfigurable
+            parentId="tools"
+            instance="de.espend.intellij.cli.settings.PluginSettingsConfigurable"
+            id="de.espend.intellij.cli.settings.PluginSettingsConfigurable"
+            displayName="Agent CLI"/>
+    </extensions>
+</idea-plugin>
