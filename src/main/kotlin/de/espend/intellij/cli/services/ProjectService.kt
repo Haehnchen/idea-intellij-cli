@@ -1,15 +1,16 @@
 package de.espend.intellij.cli.services
 
-import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.WindowManager
 import kotlinx.serialization.Serializable
 
 /**
  * Service for managing and querying IntelliJ projects
  */
+@Service(Service.Level.APP)
 class ProjectService {
 
     /**
@@ -84,11 +85,6 @@ class ProjectService {
     }
 
     /**
-     * Get a project by name (kept for backwards compatibility).
-     */
-    fun getProjectByName(name: String): Project? = resolveProject(name)
-
-    /**
      * Get the active (focused) project
      */
     fun getActiveProject(): Project? {
@@ -99,40 +95,8 @@ class ProjectService {
         } ?: projectManager.openProjects.firstOrNull()
     }
 
-    /**
-     * Find files in a project matching a pattern
-     */
-    fun findFiles(project: Project, pattern: String, maxResults: Int = 100): List<VirtualFile> {
-        val result = mutableListOf<VirtualFile>()
-        @Suppress("DEPRECATION")
-        val baseDir = project.baseDir ?: return result
-
-        fun searchRecursive(dir: VirtualFile) {
-            if (result.size >= maxResults) return
-
-            dir.children.forEach { file ->
-                if (result.size >= maxResults) return
-
-                if (file.isDirectory) {
-                    // Skip hidden and system directories
-                    if (!file.name.startsWith(".") && file.name != "node_modules") {
-                        searchRecursive(file)
-                    }
-                } else if (file.name.contains(pattern, ignoreCase = true)) {
-                    result.add(file)
-                }
-            }
-        }
-
-        ApplicationManager.getApplication().runReadAction {
-            searchRecursive(baseDir)
-        }
-
-        return result
-    }
-
     companion object {
         val instance: ProjectService
-            get() = ApplicationManager.getApplication().getService(ProjectService::class.java)
+            get() = service()
     }
 }

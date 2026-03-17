@@ -37,24 +37,22 @@ object IdeProductInfo {
      */
     enum class IdeProduct(
         val productCodes: Set<String>,
-        val serverName: String,
         val defaultPort: Int,
-        val displayName: String
     ) {
-        INTELLIJ_IDEA(setOf("IC", "IU", "IE"), "intellij-agent-cli", 8568, "IntelliJ IDEA"),
-        ANDROID_STUDIO(setOf("AI"), "android-studio-agent-cli", 8569, "Android Studio"),
-        PYCHARM(setOf("PC", "PY", "PE"), "pycharm-agent-cli", 8570, "PyCharm"),
-        WEBSTORM(setOf("WS"), "webstorm-agent-cli", 8571, "WebStorm"),
-        GOLAND(setOf("GO"), "goland-agent-cli", 8572, "GoLand"),
-        PHPSTORM(setOf("PS"), "phpstorm-agent-cli", 8573, "PhpStorm"),
-        RUBYMINE(setOf("RM"), "rubymine-agent-cli", 8574, "RubyMine"),
-        CLION(setOf("CL"), "clion-agent-cli", 8575, "CLion"),
-        RUSTROVER(setOf("RR"), "rustrover-agent-cli", 8576, "RustRover"),
-        DATAGRIP(setOf("DB"), "datagrip-agent-cli", 8577, "DataGrip"),
-        AQUA(setOf("QA"), "aqua-agent-cli", 8578, "Aqua"),
-        DATASPELL(setOf("DS"), "dataspell-agent-cli", 8579, "DataSpell"),
-        RIDER(setOf("RD"), "rider-agent-cli", 8580, "Rider"),
-        UNKNOWN(emptySet(), "jetbrains-agent-cli", 8599, "JetBrains IDE");
+        INTELLIJ_IDEA(setOf("IC", "IU", "IE"), 8568),
+        ANDROID_STUDIO(setOf("AI"), 8569),
+        PYCHARM(setOf("PC", "PY", "PE"), 8570),
+        WEBSTORM(setOf("WS"), 8571),
+        GOLAND(setOf("GO"), 8572),
+        PHPSTORM(setOf("PS"), 8573),
+        RUBYMINE(setOf("RM"), 8574),
+        CLION(setOf("CL"), 8575),
+        RUSTROVER(setOf("RR"), 8576),
+        DATAGRIP(setOf("DB"), 8577),
+        AQUA(setOf("QA"), 8578),
+        DATASPELL(setOf("DS"), 8579),
+        RIDER(setOf("RD"), 8580),
+        UNKNOWN(emptySet(), 8599);
 
         companion object {
             /**
@@ -85,33 +83,7 @@ object IdeProductInfo {
     }
 
     /**
-     * Gets the detected IDE product.
-     */
-    fun detectIdeProduct(): IdeProduct = cachedProduct
-
-    /**
-     * Gets the IDE-specific server name (e.g., "intellij-agent-cli", "pycharm-agent-cli").
-     */
-    fun getServerName(): String = cachedProduct.serverName
-
-    /**
      * Gets the IDE-specific default port.
      */
     fun getDefaultPort(): Int = cachedProduct.defaultPort
-
-    /**
-     * Gets the IDE display name.
-     */
-    fun getIdeDisplayName(): String = cachedProduct.displayName
-
-    /**
-     * Gets the raw product code from ApplicationInfo.
-     */
-    fun getProductCode(): String {
-        return try {
-            ApplicationInfo.getInstance().build.productCode
-        } catch (e: Exception) {
-            "UNKNOWN"
-        }
-    }
 }

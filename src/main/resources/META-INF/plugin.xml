@@ -92,8 +92,6 @@
     <!-- Extensions -->
     <extensions defaultExtensionNs="com.intellij">
         <!-- Application Services -->
-        <applicationService serviceImplementation="de.espend.intellij.cli.services.ProjectService"/>
-        <applicationService serviceImplementation="de.espend.intellij.cli.execution.CodeExecutor"/>
         <applicationService serviceImplementation="de.espend.intellij.cli.settings.PluginSettings"/>
 
         <!-- Settings -->

@@ -2,6 +2,8 @@ package de.espend.intellij.cli.execution
 
 import com.intellij.openapi.application.Application
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
@@ -21,6 +23,7 @@ import kotlin.script.experimental.jvmhost.BasicJvmScriptingHost
 /**
  * Executes Kotlin code in the context of an IntelliJ project
  */
+@Service(Service.Level.APP)
 class CodeExecutor {
 
     @Serializable
@@ -29,13 +32,6 @@ class CodeExecutor {
         val output: String,
         val error: String?,
         val executionTimeMs: Long
-    )
-
-    @Serializable
-    data class ExecutionRequest(
-        val project: String?,
-        val code: String,
-        val timeout: Long = 60
     )
 
     private val scriptingHost = BasicJvmScriptingHost()
@@ -149,7 +145,7 @@ class CodeExecutor {
 
     companion object {
         val instance: CodeExecutor
-            get() = ApplicationManager.getApplication().getService(CodeExecutor::class.java)
+            get() = service()
     }
 
     /**
@@ -253,12 +249,15 @@ class ExecutionScriptContext(
     }
 }
 
-internal object ExecutionScriptCompilationConfiguration : ScriptCompilationConfiguration()
+internal object ExecutionScriptCompilationConfiguration : ScriptCompilationConfiguration() {
+    private fun readResolve(): Any = ExecutionScriptCompilationConfiguration
+}
 
 @KotlinScript(
     fileExtension = "exec.kts",
     compilationConfiguration = ExecutionScriptCompilationConfiguration::class
 )
+@Suppress("unused") // Script API bindings — used at runtime by executed scripts
 abstract class ExecutionScriptTemplate(private val ctx: ExecutionScriptContext) {
     val project: Project
         get() = ctx.project

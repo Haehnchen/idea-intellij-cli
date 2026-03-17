@@ -40,12 +40,6 @@ class IntellijAgentCliPlugin {
         server = null
     }
 
-    fun isServerRunning(): Boolean = server?.isRunning() == true
-
-    fun getServerPort(): Int = server?.getPort() ?: 0
-
-    fun getServerHost(): String = server?.getHost() ?: ""
-
     companion object {
         val instance: IntellijAgentCliPlugin
             get() = service()
