@@ -137,8 +137,8 @@ The IDE and project are auto-detected from the current working directory. Nothin
 If multiple IDEs or projects are running, pass the port or project path explicitly:
 
 ```bash
-intellij-cli -P 8571 action diagnostics file=src/Foo.kt
-intellij-cli action diagnostics project=/path/to/project file=src/Foo.kt
+intellij-cli -P 8571 action find_references file=src/Foo.kt line=42 column=15
+intellij-cli action find_references project=/path/to/project file=src/Foo.kt line=42 column=15
 ```
 
 Each JetBrains IDE listens on its own port: IntelliJ IDEA 8568, Android Studio 8569, PyCharm 8570, WebStorm 8571, GoLand 8572, PhpStorm 8573, RubyMine 8574, CLion 8575, RustRover 8576, DataGrip 8577, Aqua 8578, DataSpell 8579, Rider 8580. Unrecognized IDEs fall back to **8599**.
@@ -166,20 +166,18 @@ can look add the inspection warning / error in resources/META-INF/plugin.xml wit
 ● Skill(intellij-cli)
   ⎿  Successfully loaded skill
 
-● Let me run diagnostics on the plugin.xml file and read it simultaneously.
+● Let me get file problems on the plugin.xml file.
 
-● Let me run diagnostics on the plugin.xml file.
-
-● Bash(intellij-cli action diagnostics file=resources/META-INF/plugin.xml)
-  ⎿  Executing: (embedded)/actions/project/diagnostics.kt
+● Bash(intellij-cli action get_file_problems file=resources/META-INF/plugin.xml)
+  ⎿  Executing: (embedded)/actions/project/get_file_problems.kt
 
      Execution time: 1449 ms
      … +4 lines (ctrl+o to expand)
 
 ● Searched for 1 pattern (ctrl+o to expand)
 
-● Bash(intellij-cli action diagnostics file=src/main/resources/META-INF/plugin.xml)
-  ⎿  Executing: (embedded)/actions/project/diagnostics.kt
+● Bash(intellij-cli action get_file_problems file=src/main/resources/META-INF/plugin.xml)
+  ⎿  Executing: (embedded)/actions/project/get_file_problems.kt
 
      Execution time: 803 ms
      … +12 lines (ctrl+o to expand)

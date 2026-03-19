@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -153,7 +154,6 @@ The code has access to:
 Examples:
   intellij-cli exec -c "println(project.name)"
   intellij-cli exec -f plugins
-  intellij-cli exec -f diagnostics file=src/main/kotlin/Foo.kt
   intellij-cli exec -f find_references file=src/Foo.kt line=42 column=15`,
 		Args: cobra.ArbitraryArgs,
 		Run:  runExec,
@@ -170,7 +170,6 @@ Examples:
 Examples:
   intellij-cli action                                    list all actions
   intellij-cli action modules                            run project action
-  intellij-cli action diagnostics file=src/Foo.kt        run with parameter
   intellij-cli action find_references file=src/Foo.kt line=42 column=15`,
 		Args: cobra.ArbitraryArgs,
 		Run:  runActionCmd,
@@ -178,16 +177,20 @@ Examples:
 
 	// source command: show source code of an action script
 	var sourceCmd = &cobra.Command{
-		Use:   "source <action>",
+		Use:   "source [<action>]",
 		Short: "Show Kotlin action source code as examples for programmatically generating new actions or executing code",
-		Args:  cobra.ExactArgs(1),
-		Run:   runSource,
+		Long: `Show Kotlin action source code.
+
+Without arguments, lists all available action names.
+With an action name, prints the full Kotlin source code.`,
+		Args: cobra.MaximumNArgs(1),
+		Run:  runSource,
 	}
 
 	// skill command: generate SKILL.md for agent/Claude integration
 	var skillCmd = &cobra.Command{
 		Use:   "skill <target>",
-		Short: "Generate a SKILL.md file for agent or Claude integration",
+		Short: "Generate a SKILL.md file for agent or Claude integration. With target=print get detailed skill docs with usage, examples, Kotlin source snippets, and how to build programmatic actions",
 		Long: `Generate a SKILL.md file describing this CLI tool for AI agent integration.
 
 Targets:
@@ -991,8 +994,8 @@ description: Access JetBrains IDE intelligence to find errors and warnings, anal
 	buf.WriteString("If auto-detection fails, the default fallback port is 8568 (IntelliJ IDEA).\n\n")
 	buf.WriteString("If multiple IDEs or projects are running, pass the port or project path explicitly:\n\n")
 	buf.WriteString("```\n")
-	buf.WriteString("intellij-cli -P 8571 action diagnostics file=src/Foo.kt\n")
-	buf.WriteString("intellij-cli action diagnostics project=/path/to/project file=src/Foo.kt\n")
+	buf.WriteString("intellij-cli -P 8571 action find_references file=src/Foo.kt line=42 column=15\n")
+	buf.WriteString("intellij-cli action find_references project=/path/to/project file=src/Foo.kt line=42 column=15\n")
 	buf.WriteString("```\n\n")
 	buf.WriteString("Each JetBrains IDE listens on its own port: IntelliJ IDEA 8568, Android Studio 8569, PyCharm 8570, WebStorm 8571, GoLand 8572, PhpStorm 8573, RubyMine 8574, CLion 8575, RustRover 8576, DataGrip 8577, Aqua 8578, DataSpell 8579, Rider 8580. Unrecognized IDEs fall back to 8599.\n")
 
@@ -1013,7 +1016,6 @@ description: Access JetBrains IDE intelligence to find errors and warnings, anal
 	buf.WriteString("Every action listed above supports this — source is the intended way to learn the API patterns.\n\n")
 	buf.WriteString("```\n")
 	buf.WriteString("intellij-cli source notify           # notifications\n")
-	buf.WriteString("intellij-cli source diagnostics      # file errors/warnings\n")
 	buf.WriteString("intellij-cli source find_references  # symbol usages\n")
 	buf.WriteString("intellij-cli source modules          # project modules\n")
 	buf.WriteString("intellij-cli source tree             # file tree\n")
@@ -1081,6 +1083,12 @@ func runSkill(cmd *cobra.Command, args []string) {
 }
 
 func runSource(cmd *cobra.Command, args []string) {
+	// No args: list available action names
+	if len(args) == 0 {
+		fmt.Print(buildSourceListOutput())
+		return
+	}
+
 	source, resolvedPath, _, err := resolveActionFile(args[0])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -1228,4 +1236,77 @@ func buildListActionsOutput() string {
 
 func runListActions(cmd *cobra.Command, args []string) {
 	fmt.Print(buildListActionsOutput())
+}
+
+// buildSourceListOutput returns a simple list of action names for source command
+func buildSourceListOutput() string {
+	localDir := getLocalActionsDir()
+	globalDir := getGlobalActionsDir()
+
+	var names []string
+	seen := make(map[string]bool)
+
+	// Helper to add names without duplicates
+	addNames := func(newNames []string) {
+		for _, name := range newNames {
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+		}
+	}
+
+	// 1. Local project actions
+	addNames(getActionNamesFromDir(localDir))
+	addNames(getActionNamesFromDir(filepath.Join(localDir, "project")))
+
+	// 2. Global actions
+	addNames(getActionNamesFromDir(globalDir))
+	addNames(getActionNamesFromDir(filepath.Join(globalDir, "project")))
+
+	// 3. Embedded actions
+	addNames(getActionNamesFromFS(embeddedActions, ""))
+	addNames(getActionNamesFromFS(embeddedActions, "project"))
+
+	sort.Strings(names)
+
+	var buf strings.Builder
+	for _, name := range names {
+		fmt.Fprintln(&buf, name)
+	}
+	return buf.String()
+}
+
+// getActionNamesFromDir returns action names from a directory
+func getActionNamesFromDir(dir string) []string {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".kt") {
+			names = append(names, strings.TrimSuffix(file.Name(), ".kt"))
+		}
+	}
+	return names
+}
+
+// getActionNamesFromFS returns action names from an embedded filesystem
+func getActionNamesFromFS(fsys fs.FS, subdir string) []string {
+	dir := "actions"
+	if subdir != "" {
+		dir = "actions/" + subdir
+	}
+	files, err := fs.ReadDir(fsys, dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, file := range files {
+		if !file.IsDir() && strings.HasSuffix(file.Name(), ".kt") {
+			names = append(names, strings.TrimSuffix(file.Name(), ".kt"))
+		}
+	}
+	return names
 }
