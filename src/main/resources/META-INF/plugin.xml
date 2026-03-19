@@ -60,7 +60,7 @@
         <b>Multiple IDEs &amp; Projects</b><br>
         The IDE and project are auto-detected from the current working directory. If multiple IDEs
         or projects are running, pass the port or project path explicitly:<br>
-        <code>intellij-cli -P 8571 action diagnostics file=src/Foo.kt</code><br>
+        <code>intellij-cli -P 8571 action find_references file=src/Foo.kt line=42 column=15</code><br>
         <br>
         <b>IDE-Specific Default Ports</b><br>
         IntelliJ IDEA: 8568, Android Studio: 8569, PyCharm: 8570, WebStorm: 8571,
