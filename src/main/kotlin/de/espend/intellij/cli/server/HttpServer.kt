@@ -48,31 +48,30 @@ class HttpServer {
         currentPort = settings.serverPort
 
         app = Javalin.create { config ->
-            config.showJavalinBanner = false
+            config.startup.showJavalinBanner = false
             config.http.maxRequestSize = 10_000_000L // 10MB
-        }
 
-        // CORS headers for local development
-        app?.before { ctx ->
-            ctx.header("Access-Control-Allow-Origin", "*")
-            ctx.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-            ctx.header("Access-Control-Allow-Headers", "Content-Type")
-        }
+            // CORS headers for local development
+            config.routes.before { ctx ->
+                ctx.header("Access-Control-Allow-Origin", "*")
+                ctx.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                ctx.header("Access-Control-Allow-Headers", "Content-Type")
+            }
 
-        // Routes
-        app?.get("/") { ctx -> handleIndex(ctx) }
-        app?.get("/health") { ctx -> handleHealth(ctx) }
-        app?.get("/projects") { ctx -> handleProjects(ctx) }
-        app?.post("/execute") { ctx -> handleExecute(ctx) }
+            // Routes
+            config.routes.get("/") { ctx -> handleIndex(ctx) }
+            config.routes.get("/health") { ctx -> handleHealth(ctx) }
+            config.routes.get("/projects") { ctx -> handleProjects(ctx) }
+            config.routes.post("/execute") { ctx -> handleExecute(ctx) }
 
-
-        // Error handling
-        app?.exception(Exception::class.java) { e, ctx ->
-            ctx.status(500)
-            ctx.json(mapOf(
-                "error" to (e.message ?: "Internal server error"),
-                "type" to e::class.simpleName
-            ))
+            // Error handling
+            config.routes.exception(Exception::class.java) { e, ctx ->
+                ctx.status(500)
+                ctx.json(mapOf(
+                    "error" to (e.message ?: "Internal server error"),
+                    "type" to e::class.simpleName
+                ))
+            }
         }
 
         app?.start(currentPort)
@@ -84,12 +83,6 @@ class HttpServer {
         app = null
         println("[intellij-agent-cli] HTTP server stopped")
     }
-
-    fun isRunning(): Boolean = app?.jettyServer()?.server()?.isStarted == true
-
-    fun getPort(): Int = currentPort
-
-    fun getHost(): String = currentHost
 
     private fun handleIndex(ctx: Context) {
         ctx.contentType("text/plain")

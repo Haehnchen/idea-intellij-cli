@@ -2,7 +2,7 @@ plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.2.20"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.2.20"
-    id("org.jetbrains.intellij.platform") version "2.11.0"
+    id("org.jetbrains.intellij.platform") version "2.13.1"
 }
 
 group = "de.espend.intellij-agent-cli"
@@ -18,7 +18,7 @@ repositories {
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html
 dependencies {
     intellijPlatform {
-        intellijIdea("2025.3.3")
+        intellijIdea("2025.3.4")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         // Add plugin dependencies for compilation here, example:
@@ -26,7 +26,7 @@ dependencies {
     }
 
     // HTTP Server
-    implementation("io.javalin:javalin:6.7.0")
+    implementation("io.javalin:javalin:7.1.0")
 
     // Kotlin scripting for code execution
     implementation("org.jetbrains.kotlin:kotlin-scripting-common:2.2.20")
