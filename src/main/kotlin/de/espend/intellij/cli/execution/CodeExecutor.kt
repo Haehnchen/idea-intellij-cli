@@ -4,7 +4,6 @@ import com.intellij.openapi.application.Application
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
-import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.withTimeoutOrNull
@@ -73,7 +72,7 @@ class CodeExecutor {
             } else {
                 ExecutionResult(
                     success = true,
-                    output = outputBuffer.toString() + (result.value?.toString() ?: ""),
+                    output = outputBuffer.toString(),
                     error = null,
                     executionTimeMs = executionTime
                 )
@@ -126,7 +125,11 @@ class CodeExecutor {
 
     private fun unwrapResult(result: EvaluationResult): Any? {
         return when (val returnValue = result.returnValue) {
-            is ResultValue.Value -> returnValue.value
+            is ResultValue.Value -> {
+                // Scripts use println() for output - ignore return values to avoid
+                // unexpected output when script ends with expressions like readAction { }
+                if (returnValue.value == Unit) null else null
+            }
             is ResultValue.Unit -> null
             is ResultValue.Error -> throw returnValue.error
             ResultValue.NotEvaluated -> null
@@ -151,11 +154,10 @@ class CodeExecutor {
     /**
      * Builds the compilation classpath for scripts.
      *
-     * Strategy (mirrors kotlin-notebook-integrations/intellij-platform):
-     * 1. IntelliJ platform JARs from lib/ — provides PluginManagerCore, PluginId, etc.
-     * 2. Plugin classloader JARs — provides classes from this plugin and its dependencies.
-     * kotlin-* JARs are excluded from both because BasicJvmScriptingHost bundles its own
-     * kotlin-stdlib; adding a second copy causes "Method 'iterator()' is ambiguous" errors.
+     * Strategy (mirrors mcp-steroid's ScriptClassLoaderFactory):
+     * Iterate all loaded plugins via PluginManagerCore to collect the complete IntelliJ
+     * + plugin classpath. kotlin-* JARs are excluded because BasicJvmScriptingHost
+     * bundles its own kotlin-stdlib; adding a second copy causes ambiguous method errors.
      */
     private fun buildPlatformClasspath(): List<File> {
         val files = linkedSetOf<File>()
@@ -166,15 +168,6 @@ class CodeExecutor {
             }
         }
 
-        // IntelliJ platform JARs — scan lib/ recursively to cover lib/modules/ in 2023+ installs
-        // (IdeaPluginDescriptor and others moved to module JARs in newer IDE versions)
-        try {
-            File(PathManager.getLibPath()).walkTopDown()
-                .filter { it.isFile && it.extension == "jar" }
-                .forEach(::addFile)
-        } catch (_: Exception) {}
-
-        // Plugin's own classloader — handles IntelliJ's UrlClassLoader (getFiles()) and URLClassLoader
         fun addClassLoaderJars(classLoader: ClassLoader?) {
             var current = classLoader
             while (current != null) {
@@ -198,7 +191,13 @@ class CodeExecutor {
             }
         }
 
-        addClassLoaderJars(javaClass.classLoader)
+        // Iterate all loaded plugins to collect the complete IntelliJ + plugin classpath.
+        // This mirrors mcp-steroid's ScriptClassLoaderFactory approach and ensures all
+        // platform JARs (including util-8.jar and others not reachable via the plugin
+        // classloader chain) are available for script compilation.
+        com.intellij.ide.plugins.PluginManagerCore.plugins.forEach { descriptor ->
+            addClassLoaderJars(descriptor.pluginClassLoader)
+        }
 
         return files.toList()
     }
