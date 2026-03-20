@@ -132,6 +132,8 @@ class HttpServer {
                 kotlinx.coroutines.runBlocking {
                     codeExecutor.execute(project, request.code, request.timeout)
                 }
+            }.thenAccept { result ->
+                ctx.json(result)
             }
         }
     }
