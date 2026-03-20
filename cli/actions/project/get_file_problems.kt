@@ -1,9 +1,17 @@
-// Action: Inspect Code - run code inspections (Code Analysis) to find errors, warnings, and problems (max 50 files for directories)
+// Action: Inspect Code - run code inspections to find errors and warnings (compact text output)
 // Usage: intellij-cli action get_file_problems path=src/Foo.kt
-//        intellij-cli action get_file_problems path=src/main/kotlin recursive=false
-//        intellij-cli action get_file_problems path=src/Foo.kt inspection=UnusedDeclaration
-//        intellij-cli action get_file_problems path=src/Foo.kt inspection=UnusedDeclaration,PhpUnused
+//        intellij-cli action get_file_problems path=src/main/kotlin recursive=true
 //        intellij-cli action get_file_problems path=src/Foo.kt errorsOnly=true
+//        intellij-cli action get_file_problems path=src/Foo.kt inspection=UnusedDeclaration
+//
+// Output format (one problem per line, grouped by file):
+//   <file>
+//     <line>:<col> [<SEVERITY>] (<inspectionId>) <description>
+//       > <source line>
+//
+//   Severity: ERROR | WARNING | WEAK_WARNING | INFO
+//   inspectionId: inspection rule name (e.g. UnusedDeclaration, PhpUnused) — empty for syntax/parser errors
+//   Use inspectionId with inspection= parameter to re-run or filter a specific rule.
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
@@ -25,18 +33,21 @@ import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
 
 // --- Configure ---
-val path: String = ""            // file or directory path relative to project root
-val recursive: Boolean = true    // scan subdirectories recursively
-val errorsOnly: Boolean = false  // true = only errors, false = errors + warnings
-val inspection: String = ""      // optional: comma-separated inspection IDs (e.g., "UnusedDeclaration,PhpUnused")
+val path: String = ""
+val recursive: Boolean = true
+val errorsOnly: Boolean = false
+val inspection: String = ""
 // -----------------
 
-fun jsonEscape(s: String): String = s
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
-    .replace("\n", "\\n")
-    .replace("\r", "\\r")
-    .replace("\t", "\\t")
+data class Problem(
+    val file: String,
+    val line: Int,
+    val column: Int,
+    val severity: String,
+    val description: String,
+    val lineContent: String,
+    val inspectionId: String = ""
+)
 
 fun defaultCodeInsightContext(): Any {
     val contextsClass = Class.forName("com.intellij.codeInsight.multiverse.CodeInsightContexts")
@@ -54,60 +65,25 @@ fun runInsideHighlightingSessionCompat(
         candidate.name == "runInsideHighlightingSession" && candidate.parameterCount == 6
     } ?: error("HighlightingSessionImpl.runInsideHighlightingSession() not found")
 
-    method.invoke(
-        null,
-        psiFile,
-        context,
-        null,
-        range,
-        false,
-        java.util.function.Consumer<Any> { session ->
-            action(session as HighlightingSessionImpl)
-        }
-    )
+    method.invoke(null, psiFile, context, null, range, false,
+        java.util.function.Consumer<Any> { session -> action(session as HighlightingSessionImpl) })
 }
 
-fun buildProblemJson(
-    severity: String,
-    description: String,
-    lineContent: String,
-    line: Int,
-    column: Int,
-    inspectionId: String = ""
-): String = buildString {
-    append("{")
-    append("\"severity\":\"${jsonEscape(severity)}\",")
-    append("\"description\":\"${jsonEscape(description)}\",")
-    append("\"lineContent\":\"${jsonEscape(lineContent)}\",")
-    append("\"line\":$line,")
-    append("\"column\":$column")
-    if (inspectionId.isNotEmpty()) {
-        append(",\"inspection\":\"${jsonEscape(inspectionId)}\"")
-    }
-    append("}")
-}
-
-// Run a specific inspection on the file
 fun runSpecificInspection(
     psiFile: com.intellij.psi.PsiFile,
     document: com.intellij.openapi.editor.Document,
-    inspectionId: String
-): List<String> {
-    val problems = mutableListOf<String>()
+    inspectionId: String,
+    relativePath: String
+): List<Problem> {
+    val problems = mutableListOf<Problem>()
     val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
     val inspectionManager = InspectionManager.getInstance(project)
 
-    val enabledTools = profile.getAllEnabledInspectionTools(project)
-    val toolEntry = enabledTools.find { it.shortName.equals(inspectionId, ignoreCase = true) }
+    val toolEntry = profile.getAllEnabledInspectionTools(project)
+        .find { it.shortName.equals(inspectionId, ignoreCase = true) } ?: return problems
+    val localWrapper = toolEntry.tool as? LocalInspectionToolWrapper ?: return problems
 
-    if (toolEntry == null) return problems
-
-    val localWrapper = toolEntry.tool as? LocalInspectionToolWrapper
-    if (localWrapper == null) return problems
-
-    val globalContext = inspectionManager.createNewGlobalContext()
-    val descriptors = InspectionEngine.runInspectionOnFile(psiFile, localWrapper, globalContext)
-
+    val descriptors = InspectionEngine.runInspectionOnFile(psiFile, localWrapper, inspectionManager.createNewGlobalContext())
     for (descriptor in descriptors) {
         val element = descriptor.psiElement ?: continue
         if (element.textOffset < 0 || element.textOffset >= document.textLength) continue
@@ -119,33 +95,23 @@ fun runSpecificInspection(
 
         val severity = when (descriptor.highlightType) {
             ProblemHighlightType.ERROR, ProblemHighlightType.GENERIC_ERROR -> "ERROR"
-            ProblemHighlightType.WARNING -> "WARNING"
+            ProblemHighlightType.WARNING, ProblemHighlightType.GENERIC_ERROR_OR_WARNING -> "WARNING"
             ProblemHighlightType.WEAK_WARNING -> "WEAK_WARNING"
-            ProblemHighlightType.GENERIC_ERROR_OR_WARNING -> "WARNING"
-            else -> "INFORMATION"
+            else -> "INFO"
         }
 
         if (errorsOnly && severity != "ERROR") continue
-
-        problems.add(buildProblemJson(
-            severity,
-            descriptor.descriptionTemplate ?: "",
-            lineContent,
-            startLine + 1,
-            column + 1,
-            inspectionId
-        ))
+        problems.add(Problem(relativePath, startLine + 1, column + 1, severity, descriptor.descriptionTemplate ?: "", lineContent, inspectionId))
     }
-
     return problems
 }
 
-// Run all inspections on a file (default behavior)
 fun runAllInspections(
     psiFile: com.intellij.psi.PsiFile,
-    document: com.intellij.openapi.editor.Document
-): List<String> {
-    val problems = mutableListOf<String>()
+    document: com.intellij.openapi.editor.Document,
+    relativePath: String
+): List<Problem> {
+    val problems = mutableListOf<Problem>()
     val minSeverity = if (errorsOnly) HighlightSeverity.ERROR else HighlightSeverity.WEAK_WARNING
     val daemonIndicator = DaemonProgressIndicator()
     val range = ProperTextRange(0, document.textLength)
@@ -160,18 +126,11 @@ fun runAllInspections(
                 if (info.severity.myVal >= minSeverity.myVal) {
                     val startLine = document.getLineNumber(info.startOffset)
                     val lineStartOffset = document.getLineStartOffset(startLine)
-                    val lineContent = document.getText(
-                        TextRange(lineStartOffset, document.getLineEndOffset(startLine))
-                    )
+                    val lineContent = document.getText(TextRange(lineStartOffset, document.getLineEndOffset(startLine)))
                     val column = info.startOffset - lineStartOffset
-
-                    problems.add(buildProblemJson(
-                        info.severity.name,
-                        info.description ?: "",
-                        lineContent,
-                        startLine + 1,
-                        column + 1
-                    ))
+                    // inspectionToolId is available on HighlightInfo via toolId field (may be null for daemon passes)
+                    val inspId = try { info.javaClass.getMethod("getInspectionToolId").invoke(info) as? String ?: "" } catch (_: Exception) { "" }
+                    problems.add(Problem(relativePath, startLine + 1, column + 1, info.severity.name, info.description ?: "", lineContent, inspId))
                 }
             }
         }
@@ -180,46 +139,60 @@ fun runAllInspections(
     return problems
 }
 
-// Collect files from directory (stops at 50 files)
 fun collectFiles(vf: VirtualFile): List<VirtualFile> {
     val result = mutableListOf<VirtualFile>()
-
     fun collect(v: VirtualFile) {
-        if (result.size > 50) return  // Stop early if we hit limit
-        if (!v.isDirectory) {
-            result.add(v)
-        } else if (recursive) {
-            v.children?.forEach { collect(it) }
-        } else {
-            v.children?.filter { !it.isDirectory }?.forEach { result.add(it) }
-        }
+        if (result.size >= 50) return
+        if (!v.isDirectory) result.add(v)
+        else if (recursive) v.children?.forEach { collect(it) }
+        else v.children?.filter { !it.isDirectory }?.forEach { result.add(it) }
     }
-
     collect(vf)
     return result
 }
 
+fun printProblems(problems: List<Problem>) {
+    if (problems.isEmpty()) {
+        println("No problems found.")
+        return
+    }
+
+    val byFile = problems.groupBy { it.file }
+    for ((file, fileProblems) in byFile) {
+        println(file)
+        for (p in fileProblems.sortedWith(compareBy({ it.line }, { it.column }))) {
+            val inspPart = if (p.inspectionId.isNotEmpty()) " (${p.inspectionId})" else ""
+            println("  ${p.line}:${p.column} [${p.severity}]$inspPart ${p.description}")
+            val trimmed = p.lineContent.trim()
+            if (trimmed.isNotEmpty()) println("    > $trimmed")
+        }
+    }
+
+    val errorCount = problems.count { it.severity == "ERROR" }
+    val warnCount = problems.count { it.severity.contains("WARN") }
+    val otherCount = problems.size - errorCount - warnCount
+    println("---")
+    println("${problems.size} problem(s): $errorCount error(s), $warnCount warning(s), $otherCount other")
+}
+
 if (path.isEmpty()) {
-    println("""{"error": "path parameter is required", "path": "", "errors": []}""")
+    println("Error: path parameter is required")
 } else if (DumbService.getInstance(project).isDumb) {
-    println("""{"error": "IDE is indexing, please wait", "path": "${jsonEscape(path)}", "errors": []}""")
+    println("Error: IDE is indexing, please wait")
 } else {
     val fullPath = "${project.basePath}/$path"
     val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.file.Paths.get(fullPath))
 
     if (virtualFile == null || !virtualFile.isValid) {
-        println("""{"error": "Path not found: $path", "path": "${jsonEscape(path)}", "errors": []}""")
+        println("Error: Path not found: $path")
     } else if (virtualFile.isDirectory) {
-        // Handle directory
         val files = collectFiles(virtualFile)
-        if (files.isEmpty()) {
-            println("""{"error": "No files found in directory", "path": "${jsonEscape(path)}", "errors": [], "fileCount": 0}""")
-        } else if (files.size > 50) {
-            println("""{"error": "Too many files (max 50), found ${files.size}", "path": "${jsonEscape(path)}", "errors": [], "fileCount": ${files.size}}""")
-        } else {
-            readAction {
+        when {
+            files.isEmpty() -> println("No files found in directory: $path")
+            files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
+            else -> readAction {
                 val psiManager = PsiManager.getInstance(project)
-                val allResults = mutableListOf<String>()
+                val allProblems = mutableListOf<Problem>()
 
                 for (vf in files) {
                     val psiFile = psiManager.findFile(vf) ?: continue
@@ -227,45 +200,30 @@ if (path.isEmpty()) {
                     val relativePath = vf.path.removePrefix(project.basePath ?: "").trimStart('/')
 
                     val problems = if (inspection.isNotEmpty()) {
-                        val inspectionIds = inspection.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                        val fileProblems = mutableListOf<String>()
-                        for (inspId in inspectionIds) {
-                            fileProblems.addAll(runSpecificInspection(psiFile, document, inspId))
-                        }
-                        fileProblems
+                        inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), relativePath) }
                     } else {
-                        runAllInspections(psiFile, document)
+                        runAllInspections(psiFile, document, relativePath)
                     }
-
-                    if (problems.isNotEmpty()) {
-                        allResults.add("""{"file":"${jsonEscape(relativePath)}","errors":[${problems.joinToString(",")}]}""")
-                    }
+                    allProblems.addAll(problems)
                 }
 
-                println("""{"directory":"${jsonEscape(path)}","recursive":$recursive,"fileCount":${files.size},"files":[${allResults.joinToString(",")}]}""")
+                printProblems(allProblems)
             }
         }
     } else {
-        // Handle single file
         readAction {
             val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
             val document = FileDocumentManager.getInstance().getDocument(virtualFile)
 
             if (psiFile == null || document == null) {
-                println("""{"error": "Cannot parse file", "path": "${jsonEscape(path)}", "errors": []}""")
-            } else if (inspection.isNotEmpty()) {
-                val inspectionIds = inspection.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                val allProblems = mutableListOf<String>()
-
-                for (inspId in inspectionIds) {
-                    val problems = runSpecificInspection(psiFile, document, inspId)
-                    allProblems.addAll(problems)
-                }
-
-                println("""{"path":"${jsonEscape(path)}","inspections":"${jsonEscape(inspection)}","errors":[${allProblems.joinToString(",")}]}""")
+                println("Error: Cannot parse file: $path")
             } else {
-                val problems = runAllInspections(psiFile, document)
-                println("""{"path":"${jsonEscape(path)}","errors":[${problems.joinToString(",")}]}""")
+                val problems = if (inspection.isNotEmpty()) {
+                    inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), path) }
+                } else {
+                    runAllInspections(psiFile, document, path)
+                }
+                printProblems(problems)
             }
         }
     }
