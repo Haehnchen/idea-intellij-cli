@@ -5,9 +5,9 @@ import de.espend.intellij.cli.services.ProjectService
 import de.espend.intellij.cli.settings.PluginSettings
 import io.javalin.Javalin
 import io.javalin.http.Context
-import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.util.concurrent.CompletableFuture
 
 /**
  * HTTP Server providing REST API for IntelliJ operations.
@@ -126,12 +126,14 @@ class HttpServer {
             return
         }
 
-        // Execute the code
-        val result = runBlocking {
-            codeExecutor.execute(project, request.code, request.timeout)
+        // Execute asynchronously to avoid blocking Javalin worker threads
+        ctx.future {
+            CompletableFuture.supplyAsync {
+                kotlinx.coroutines.runBlocking {
+                    codeExecutor.execute(project, request.code, request.timeout)
+                }
+            }
         }
-
-        ctx.json(result)
     }
 
 }

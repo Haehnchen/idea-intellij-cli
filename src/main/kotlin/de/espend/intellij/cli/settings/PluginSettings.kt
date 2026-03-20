@@ -1,11 +1,7 @@
 package de.espend.intellij.cli.settings
 
+import com.intellij.openapi.components.*
 import de.espend.intellij.cli.util.IdeProductInfo
-import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.Service
-import com.intellij.openapi.components.State
-import com.intellij.openapi.components.Storage
-import com.intellij.openapi.components.service
 
 /**
  * Application-level persistent settings for the Agent CLI plugin.
