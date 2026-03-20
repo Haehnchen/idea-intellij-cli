@@ -22,9 +22,9 @@ import (
 var embeddedActions embed.FS
 
 const (
-	defaultPort       = 8568
-	defaultTimeout    = 60
-	discoveryTimeout  = 1 // seconds for IDE discovery calls
+	defaultPort      = 8568
+	defaultTimeout   = 60
+	discoveryTimeout = 1 // seconds for IDE discovery calls
 )
 
 // idePort maps IDE display names to their default server ports.
@@ -291,7 +291,7 @@ func resolveActionFile(name string) (content string, displayPath string, isProje
 		if e != nil {
 			return "", "", false, fmt.Errorf("file not found: %s", name)
 		}
-		return string(data), name, false, nil
+		return string(data), name, true, nil
 	}
 
 	// 2. Relative to current directory
@@ -301,7 +301,7 @@ func resolveActionFile(name string) (content string, displayPath string, isProje
 		if e != nil {
 			return "", "", false, fmt.Errorf("failed to read: %s", abs)
 		}
-		return string(data), abs, false, nil
+		return string(data), abs, true, nil
 	}
 
 	// 3. Check external action dirs (local then global) — these override embedded
@@ -565,27 +565,17 @@ func resolveIDE() []ideInstance {
 	return nil
 }
 
-// resolveProject returns the project name to use.
-// Priority: explicit flag (-p) > positional project=name arg > auto-detect via discovery.
-// Auto-detect: if exactly one project is open, use it; otherwise error with list.
-func resolveProject(explicitProject string, defines []string) (string, []string) {
-	// Check if project=value was passed as a positional arg
-	for i, def := range defines {
-		if strings.HasPrefix(def, "project=") {
-			val := strings.TrimPrefix(def, "project=")
-			remaining := append(defines[:i:i], defines[i+1:]...)
-			return val, remaining
-		}
-	}
+// projectWithPort holds a project's name, path, and its IDE's port.
+type projectWithPort struct {
+	name     string
+	basePath string
+	port     int
+}
 
-	if explicitProject != "" {
-		return explicitProject, defines
-	}
-
-	// Discover all IDEs and collect all projects
+// discoverAndCollectProjects discovers all IDEs and returns all projects with their ports.
+func discoverAndCollectProjects() []projectWithPort {
 	var ides []ideInstance
 	if portExplicit {
-		// Single port: just fetch projects from that port
 		body, err := makeRequest("GET", "/projects", nil)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error fetching projects: %v\n", err)
@@ -606,12 +596,6 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 		os.Exit(1)
 	}
 
-	// Collect all projects across IDEs
-	type projectWithPort struct {
-		name     string
-		basePath string
-		port     int
-	}
 	var allProjects []projectWithPort
 	for _, ide := range ides {
 		for _, p := range ide.Projects {
@@ -625,6 +609,65 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 		fmt.Fprintln(os.Stderr, "Error: No open projects found.")
 		os.Exit(1)
 	}
+
+	return allProjects
+}
+
+// resolveProject returns the project name to use and sets the global port.
+// Priority: explicit flag (-p) > positional project=name arg > auto-detect via discovery.
+// Auto-detect: if exactly one project is open, use it; otherwise error with list.
+func resolveProject(explicitProject string, defines []string) (string, []string) {
+	// Check if project=value was passed as a positional arg
+	for i, def := range defines {
+		if strings.HasPrefix(def, "project=") {
+			val := strings.TrimPrefix(def, "project=")
+			remaining := append(defines[:i:i], defines[i+1:]...)
+			allProjects := discoverAndCollectProjects()
+			// Find matching project by name
+			for _, p := range allProjects {
+				if p.name == val {
+					port = p.port
+					return p.name, remaining
+				}
+			}
+			// Not found by name — print available projects
+			fmt.Fprintf(os.Stderr, "Error: project %q not found in any running IDE.\n", val)
+			fmt.Fprintln(os.Stderr, "Available projects:")
+			for _, p := range allProjects {
+				if p.basePath != "" {
+					fmt.Fprintf(os.Stderr, "  %s  (%s, port %d)\n", p.name, p.basePath, p.port)
+				} else {
+					fmt.Fprintf(os.Stderr, "  %s  (port %d)\n", p.name, p.port)
+				}
+			}
+			os.Exit(1)
+		}
+	}
+
+	if explicitProject != "" {
+		allProjects := discoverAndCollectProjects()
+		// Find matching project by name
+		for _, p := range allProjects {
+			if p.name == explicitProject {
+				port = p.port
+				return p.name, defines
+			}
+		}
+		// Not found by name
+		fmt.Fprintf(os.Stderr, "Error: project %q not found in any running IDE.\n", explicitProject)
+		fmt.Fprintln(os.Stderr, "Available projects:")
+		for _, p := range allProjects {
+			if p.basePath != "" {
+				fmt.Fprintf(os.Stderr, "  %s  (%s, port %d)\n", p.name, p.basePath, p.port)
+			} else {
+				fmt.Fprintf(os.Stderr, "  %s  (port %d)\n", p.name, p.port)
+			}
+		}
+		os.Exit(1)
+	}
+
+	// No explicit project — auto-detect
+	allProjects := discoverAndCollectProjects()
 
 	if len(allProjects) == 1 {
 		port = allProjects[0].port
@@ -817,21 +860,16 @@ func buildActionListFromFS(fsys fs.FS, subdir string, isProjectDir bool) (string
 	if subdir != "" {
 		dir = "actions/" + subdir
 	}
-	files, err := fs.ReadDir(fsys, dir)
-	if err != nil {
-		return "", 0
-	}
+
+	names := getActionNamesFromFS(fsys, subdir)
 	var buf strings.Builder
 	count := 0
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".kt") {
-			continue
-		}
+
+	for _, name := range names {
 		count++
-		name := strings.TrimSuffix(file.Name(), ".kt")
 		fmt.Fprintf(&buf, "  %s\n", name)
 
-		fullPath := dir + "/" + file.Name()
+		fullPath := dir + "/" + name + ".kt"
 		content, err := fs.ReadFile(fsys, fullPath)
 		if err != nil {
 			continue
@@ -872,21 +910,15 @@ func buildActionListFromFS(fsys fs.FS, subdir string, isProjectDir bool) (string
 }
 
 func buildActionListFromDir(dir string, isProjectDir bool) (string, int) {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return "", 0
-	}
+	names := getActionNamesFromDir(dir)
 	var buf strings.Builder
 	count := 0
-	for _, file := range files {
-		if file.IsDir() || !strings.HasSuffix(file.Name(), ".kt") {
-			continue
-		}
+
+	for _, name := range names {
 		count++
-		name := strings.TrimSuffix(file.Name(), ".kt")
 		fmt.Fprintf(&buf, "  %s\n", name)
 
-		fullPath := filepath.Join(dir, file.Name())
+		fullPath := filepath.Join(dir, name+".kt")
 		content, err := os.ReadFile(fullPath)
 		if err != nil {
 			continue

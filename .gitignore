@@ -45,3 +45,5 @@ bin/
 decompiled
 .idea
 .intellijPlatform
+.claude
+.agents
