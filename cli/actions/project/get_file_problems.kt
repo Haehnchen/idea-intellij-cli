@@ -5,15 +5,19 @@
 //        intellij-cli action get_file_problems path="src/Foo.kt" errorsOnly=true
 //        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration"
 //        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration,KotlinRedundantDiagnosticSuppress"
+//        intellij-cli action get_file_problems path="src/Foo.kt" context=2
 //
 // Output format (one problem per line, grouped by file):
 //   <file>
 //     <line>:<col> [<SEVERITY>] (<inspectionId>) <description>
-//       > <source line>
+//         | <context line before>   (only if context > 0)
+//       > | <source line>
+//         | <context line after>    (only if context > 0)
 //
 //   Severity: ERROR | WARNING | WEAK_WARNING | INFO
 //   inspectionId: inspection rule name (e.g. UnusedDeclaration, PhpUnused)
 //   Use inspectionId with inspection= parameter to re-run or filter a specific rule.
+//   context: number of surrounding lines to show (0 = problem line only, 2 = ±2 lines = 5 total)
 
 import com.intellij.openapi.application.TransactionGuard
 import com.intellij.openapi.vfs.VfsUtil
@@ -39,6 +43,7 @@ val recursive: Boolean = true // recurse into subdirectories when path is a dire
 val errorsOnly: Boolean = false // only report ERROR severity to skip INFO/WEAK_WARNING, or inspection=<id> to filter a specific rule
 val inspection: String = ""   // run a specific inspection by id, e.g. "UnusedDeclaration"; comma-separated to run multiple, e.g. "UnusedDeclaration,KotlinRedundantDiagnosticSuppress"
 val maxFiles: Int = 500       // maximum number of files to inspect
+val context: Int = 0         // surrounding lines to show per problem (0 = problem line only, 2 = ±2 lines = 5 total, max 15)
 // -----------------
 
 data class Problem(
@@ -48,7 +53,9 @@ data class Problem(
     val severity: String,
     val description: String,
     val lineContent: String,
-    val inspectionId: String = ""
+    val inspectionId: String = "",
+    val contextBefore: List<String> = emptyList(),
+    val contextAfter: List<String> = emptyList()
 )
 
 fun descriptorSeverity(highlightType: ProblemHighlightType): String = when (highlightType) {
@@ -72,6 +79,16 @@ fun runInspection(
         if (errorsOnly && severity != "ERROR") return@mapNotNull null
         val startLine = document.getLineNumber(element.textOffset)
         val lineStartOffset = document.getLineStartOffset(startLine)
+        val contextBefore = if (context > 0) {
+            (maxOf(0, startLine - context) until startLine).map { ln ->
+                document.getText(TextRange(document.getLineStartOffset(ln), document.getLineEndOffset(ln)))
+            }
+        } else emptyList()
+        val contextAfter = if (context > 0) {
+            (startLine + 1..minOf(document.lineCount - 1, startLine + context)).map { ln ->
+                document.getText(TextRange(document.getLineStartOffset(ln), document.getLineEndOffset(ln)))
+            }
+        } else emptyList()
         Problem(
             file = relativePath,
             line = startLine + 1,
@@ -79,7 +96,9 @@ fun runInspection(
             severity = severity,
             description = descriptor.descriptionTemplate ?: "",
             lineContent = document.getText(TextRange(lineStartOffset, document.getLineEndOffset(startLine))),
-            inspectionId = wrapper.shortName
+            inspectionId = wrapper.shortName,
+            contextBefore = contextBefore,
+            contextAfter = contextAfter
         )
     }
 }
@@ -152,10 +171,22 @@ fun printProblems(problems: List<Problem>) {
         for (p in fileProblems.sortedWith(compareBy({ it.line }, { it.column }))) {
             val inspPart = if (p.inspectionId.isNotEmpty()) " (${p.inspectionId})" else ""
             println("  ${p.line}:${p.column} [${p.severity}]$inspPart ${p.description}")
+            if (context > 0) {
+                p.contextBefore.forEachIndexed { idx, content ->
+                    val lineNum = p.line - p.contextBefore.size + idx
+                    println("    $lineNum | $content")
+                }
+            }
             val trimmed = p.lineContent.trim()
             if (trimmed.isNotEmpty()) {
                 val display = if (trimmed.length > 180) trimmed.take(180) + "... [truncated]" else trimmed
-                println("    > $display")
+                if (context > 0) println("    > ${p.line} | $display") else println("    > $display")
+            }
+            if (context > 0) {
+                p.contextAfter.forEachIndexed { idx, content ->
+                    val lineNum = p.line + 1 + idx
+                    println("    $lineNum | $content")
+                }
             }
         }
     }
@@ -187,7 +218,9 @@ TransactionGuard.getInstance().submitTransactionAndWait {
     PsiDocumentManager.getInstance(project).commitAllDocuments()
 }
 
-if (path.isEmpty()) {
+if (context < 0 || context > 15) {
+    println("Error: context must be between 0 and 15")
+} else if (path.isEmpty()) {
     println("Error: path parameter is required")
 } else if (DumbService.getInstance(project).isDumb) {
     println("Error: IDE is indexing, please wait")
