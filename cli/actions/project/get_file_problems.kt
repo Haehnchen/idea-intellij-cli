@@ -4,6 +4,7 @@
 //        intellij-cli action get_file_problems path="src/**/*.kt"
 //        intellij-cli action get_file_problems path="src/Foo.kt" errorsOnly=true
 //        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration"
+//        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration,KotlinRedundantDiagnosticSuppress"
 //
 // Output format (one problem per line, grouped by file):
 //   <file>
@@ -36,7 +37,7 @@ import com.intellij.psi.PsiManager
 val path: String = ""         // file path, directory, or glob pattern (e.g. "src/Foo.kt", "src/main/kotlin", "src/**/*.kt")
 val recursive: Boolean = true // recurse into subdirectories when path is a directory
 val errorsOnly: Boolean = false // only report ERROR severity to skip INFO/WEAK_WARNING, or inspection=<id> to filter a specific rule
-val inspection: String = ""   // run a specific inspection by id, e.g. "UnusedDeclaration" (comma-separated for multiple)
+val inspection: String = ""   // run a specific inspection by id, e.g. "UnusedDeclaration"; comma-separated to run multiple, e.g. "UnusedDeclaration,KotlinRedundantDiagnosticSuppress"
 // -----------------
 
 data class Problem(
