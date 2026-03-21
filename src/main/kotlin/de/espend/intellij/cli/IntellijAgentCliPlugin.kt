@@ -1,9 +1,10 @@
 package de.espend.intellij.cli
 
-import com.intellij.ide.AppLifecycleListener
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.startup.ProjectActivity
 import de.espend.intellij.cli.server.HttpServer
 import de.espend.intellij.cli.settings.PluginSettings
 
@@ -16,17 +17,22 @@ import de.espend.intellij.cli.settings.PluginSettings
 class IntellijAgentCliPlugin : Disposable {
 
     private var server: HttpServer? = null
+    @Volatile private var running = false
 
     /**
      * Starts the HTTP server if it's enabled in settings.
+     * Safe to call multiple times (e.g. once per project open).
      */
     fun startServer() {
+        if (running) return
+
         val settings = PluginSettings.getInstance()
         if (!settings.enabled) {
             println("[intellij-agent-cli] Server is disabled in settings. Skipping start.")
             return
         }
 
+        running = true
         if (server == null) {
             server = HttpServer()
         }
@@ -42,6 +48,7 @@ class IntellijAgentCliPlugin : Disposable {
     }
 
     override fun dispose() {
+        running = false
         stopServer()
     }
 
@@ -52,11 +59,12 @@ class IntellijAgentCliPlugin : Disposable {
 }
 
 /**
- * Starts the HTTP server when the IDE finishes initializing.
- * Uses AppLifecycleListener which supports dynamic plugin loading.
+ * Starts the HTTP server when the first project opens.
+ * postStartupActivity is dynamic-plugin-compatible and fires even when
+ * the plugin is installed without a restart.
  */
-class IdeStartupListener : AppLifecycleListener {
-    override fun appStarted() {
+class ServerStartupActivity : ProjectActivity {
+    override suspend fun execute(project: Project) {
         IntellijAgentCliPlugin.instance.startServer()
     }
 }

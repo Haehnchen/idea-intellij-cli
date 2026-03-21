@@ -83,17 +83,11 @@
     <depends>com.intellij.modules.platform</depends>
 
 
-    <!-- Application-level listeners -->
-    <applicationListeners>
-        <listener class="de.espend.intellij.cli.IdeStartupListener"
-                  topic="com.intellij.ide.AppLifecycleListener"/>
-    </applicationListeners>
-
     <!-- Extensions -->
     <extensions defaultExtensionNs="com.intellij">
         <!-- Application Services -->
-        <applicationService serviceImplementation="de.espend.intellij.cli.IntellijAgentCliPlugin"/>
         <applicationService serviceImplementation="de.espend.intellij.cli.settings.PluginSettings"/>
+        <postStartupActivity implementation="de.espend.intellij.cli.ServerStartupActivity"/>
 
         <!-- Settings -->
         <applicationConfigurable

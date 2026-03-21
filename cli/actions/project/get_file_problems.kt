@@ -13,6 +13,9 @@
 //   inspectionId: inspection rule name (e.g. UnusedDeclaration, PhpUnused) — empty for syntax/parser errors
 //   Use inspectionId with inspection= parameter to re-run or filter a specific rule.
 
+import com.intellij.openapi.application.TransactionGuard
+import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.codeInsight.daemon.impl.DaemonProgressIndicator
@@ -175,6 +178,16 @@ fun printProblems(problems: List<Problem>) {
     val otherCount = problems.size - errorCount - warnCount
     println("---")
     println("${problems.size} problem(s): $errorCount error(s), $warnCount warning(s), $otherCount other")
+}
+
+// Sync VFS and PSI before inspecting to avoid stale results from external file changes
+val projectRoot = project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }
+if (projectRoot != null) {
+    VfsUtil.markDirtyAndRefresh(false, true, true, projectRoot)
+}
+@Suppress("DEPRECATION")
+TransactionGuard.getInstance().submitTransactionAndWait {
+    PsiDocumentManager.getInstance(project).commitAllDocuments()
 }
 
 if (path.isEmpty()) {
