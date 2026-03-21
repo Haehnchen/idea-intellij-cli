@@ -1079,12 +1079,7 @@ func runSkillList() {
 
 func buildSkillContent() string {
 	var buf strings.Builder
-	buf.WriteString(`---
-name: intellij-cli
-description: Access JetBrains IDE intelligence to find errors and warnings, analyze code, find usages, run diagnostics, refactor, navigate codebases, programmatically control, and notify the user via IDE notifications across IntelliJ IDEA, PhpStorm, WebStorm, GoLand, PyCharm and other IDEs. If the working directory contains a `.idea/` folder, it is likely a supported project.
----
-
-`)
+	buf.WriteString("---\nname: intellij-cli\ndescription: Access JetBrains IDE intelligence to find errors and warnings, analyze code, find usages, run diagnostics, refactor, navigate codebases, programmatically control, and notify the user via IDE notifications across IntelliJ IDEA, PhpStorm, WebStorm, GoLand, PyCharm and other IDEs. If the working directory contains a `.idea/` folder, it is likely a supported project.\n---\n\n")
 
 	buf.WriteString("## What I do\n\n")
 	buf.WriteString("- Find usages, references, and call hierarchies for any symbol across the codebase\n")
