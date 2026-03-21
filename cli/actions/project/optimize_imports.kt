@@ -1,5 +1,5 @@
 // Action: Optimize imports for a file
-// Usage: intellij-cli action optimize_imports file=src/main/kotlin/com/example/Foo.kt
+// Usage: intellij-cli action optimize_imports file="src/main/kotlin/com/example/Foo.kt"
 
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.project.DumbService

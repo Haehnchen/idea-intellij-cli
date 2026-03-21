@@ -1,5 +1,5 @@
 // Action: Install or update a plugin from a local ZIP/JAR file
-// Usage: intellij-cli action install_plugin file=/absolute/path/to/plugin.zip
+// Usage: intellij-cli action install_plugin file="/absolute/path/to/plugin.zip"
 
 import com.intellij.ide.plugins.IdeaPluginDescriptorImpl
 import com.intellij.ide.plugins.PluginInstaller

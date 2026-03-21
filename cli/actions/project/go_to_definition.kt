@@ -1,5 +1,5 @@
 // Action: Go to the declaration of a symbol at a given file position
-// Usage: intellij-cli action go_to_definition file=src/Foo.kt line=42 column=15
+// Usage: intellij-cli action go_to_definition file="src/Foo.kt" line=42 column=15
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange

@@ -1,5 +1,5 @@
 // Action: Find files by name using the IDE's "Go to File" engine
-// Usage: intellij-cli action find_file name=Foo.kt
+// Usage: intellij-cli action find_file name="Foo.kt"
 // Uses FILE_EP_NAME contributors — same engine as "Go to File" (Ctrl+Shift+N) / Search Everywhere.
 
 import com.intellij.navigation.ChooseByNameContributor

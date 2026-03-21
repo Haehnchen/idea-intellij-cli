@@ -1,5 +1,5 @@
 // Action: Show type hierarchy (supertypes and subtypes) for a class/interface at a given position
-// Usage: intellij-cli action type_hierarchy file=src/Foo.kt line=10 column=5
+// Usage: intellij-cli action type_hierarchy file="src/Foo.kt" line=10 column=5
 // Language-independent: works for Java, Kotlin, PHP, Python, etc.
 // Supertypes via reflection (getSupers/getSuperClass/getImplementedInterfaces).
 // Subtypes via DefinitionsScopedSearch — the platform-level implementation search.

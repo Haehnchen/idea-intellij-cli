@@ -1,14 +1,17 @@
 // Action: Find all references to a symbol at a given file position
-// Usage: intellij-cli action find_references file=src/Foo.kt line=42 column=15
+// Usage: intellij-cli action find_references file="src/Foo.kt" line=42 column=15
 
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.util.Processor
+import java.util.concurrent.Callable
 
 // --- Configure ---
 val file: String? = null   // relative to project root, e.g. "src/main/kotlin/Foo.kt" — required
@@ -29,12 +32,13 @@ if (DumbService.getInstance(project).isDumb) {
     if (virtualFile == null) {
         println("Error: File not found: $file")
     } else {
-        readAction {
+        val lines = ReadAction.nonBlocking(Callable {
+            val out = mutableListOf<String>()
             val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
             val document = psiFile?.let { PsiDocumentManager.getInstance(project).getDocument(it) }
 
             if (psiFile == null || document == null) {
-                println("Error: Could not parse file.")
+                out.add("Error: Could not parse file.")
             } else {
                 val relativePath = virtualFile.path.removePrefix(project.basePath ?: "").trimStart('/')
 
@@ -51,8 +55,8 @@ if (DumbService.getInstance(project).isDumb) {
                     .firstOrNull()
 
                 if (namedElement == null) {
-                    println("No named symbol at $relativePath:$resolvedLine:$resolvedColumn")
-                    println("Tip: Position cursor on a class, method, field, or variable name.")
+                    out.add("No named symbol at $relativePath:$resolvedLine:$resolvedColumn")
+                    out.add("Tip: Position cursor on a class, method, field, or variable name.")
                 } else {
                     val symbolName = namedElement.name ?: "unknown"
                     val defLine = document.getLineNumber(namedElement.textOffset) + 1
@@ -61,15 +65,15 @@ if (DumbService.getInstance(project).isDumb) {
                     val defEnd = document.getLineEndOffset(defLine - 1)
                     val defContext = document.getText(TextRange(defStart, defEnd))
 
-                    println("Symbol: '$symbolName'  ($relativePath:$defLine:$defCol)")
-                    println("  $defContext")
-                    println("  ${" ".repeat(defCol - 1)}^")
-                    println("=".repeat(60))
+                    out.add("Symbol: '$symbolName'  ($relativePath:$defLine:$defCol)")
+                    out.add("  $defContext")
+                    out.add("  ${" ".repeat(defCol - 1)}^")
+                    out.add("=".repeat(60))
 
                     data class Usage(val file: String, val line: Int, val context: String)
                     val usages = mutableListOf<Usage>()
 
-                    ReferencesSearch.search(namedElement).forEach(Processor { ref ->
+                    ReferencesSearch.search(namedElement, GlobalSearchScope.projectScope(project)).forEach(Processor { ref ->
                         val refElement = ref.element
                         val refVFile = refElement.containingFile?.virtualFile
                         if (refVFile != null) {
@@ -88,16 +92,19 @@ if (DumbService.getInstance(project).isDumb) {
                     })
 
                     if (usages.isEmpty()) {
-                        println("No references found.")
+                        out.add("No references found.")
                     } else {
-                        println("Found ${usages.size} reference(s):\n")
+                        out.add("Found ${usages.size} reference(s):\n")
                         for (u in usages.sortedWith(compareBy({ it.file }, { it.line }))) {
-                            println("${u.file}:${u.line}")
-                            println("  ${u.context}")
+                            out.add("${u.file}:${u.line}")
+                            out.add("  ${u.context}")
                         }
                     }
                 }
             }
-        }
+            out
+        }).executeSynchronously()
+
+        for (line in lines) println(line)
     }
 }

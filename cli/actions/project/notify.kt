@@ -1,6 +1,6 @@
 // Action: Show a notification balloon in IntelliJ
 // Usage: intellij-cli action notify message="Hello World"
-//        intellij-cli action notify title="Deploy done" message="All tests passed" type=information
+//        intellij-cli action notify title="Deploy done" message="All tests passed" type="information"
 
 import com.intellij.notification.Notification
 import com.intellij.notification.NotificationType

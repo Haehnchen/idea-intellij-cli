@@ -1,10 +1,12 @@
 // Action: List all available code inspections as CSV
 // Usage: intellij-cli action list_inspections
-//        intellij-cli action list_inspections filter=unused
-//        intellij-cli action list_inspections filter=unused,css,kotlin
+//        intellij-cli action list_inspections filter="unused"
+//        intellij-cli action list_inspections filter="unused,css,kotlin"
 
 import com.intellij.codeInspection.ex.InspectionToolWrapper
+import com.intellij.openapi.application.ReadAction
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
+import java.util.concurrent.Callable
 
 // --- Configure ---
 val filter: String = ""          // optional comma-separated filters (matches id/displayName/category/language)
@@ -29,9 +31,8 @@ data class InspectionInfo(
     val language: String
 )
 
-val allInspections = mutableListOf<InspectionInfo>()
-
-readAction {
+val allInspections = ReadAction.nonBlocking(Callable {
+    val result = mutableListOf<InspectionInfo>()
     val enabledTools = profile.getAllEnabledInspectionTools(project)
 
     for (wrapper in enabledTools) {
@@ -56,14 +57,15 @@ readAction {
             ""
         }
 
-        allInspections.add(InspectionInfo(
+        result.add(InspectionInfo(
             id = shortName,
             displayName = displayName,
             category = category,
             language = language
         ))
     }
-}
+    result
+}).executeSynchronously()
 
 // Parse comma-separated filters
 val filterTerms = if (filter.isNotEmpty()) {

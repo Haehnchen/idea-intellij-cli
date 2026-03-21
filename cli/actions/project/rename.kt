@@ -1,5 +1,5 @@
 // Action: Rename a symbol at a given file position across the entire project
-// Usage: intellij-cli action rename file=src/Foo.kt line=10 column=7 new_name=Bar
+// Usage: intellij-cli action rename file="src/Foo.kt" line=10 column=7 new_name="Bar"
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.vfs.LocalFileSystem

@@ -1,5 +1,7 @@
 // Action: Find classes and interfaces by name with camelCase matching
-// Usage: intellij-cli action find_class query=MyClass
+// Usage: intellij-cli action find_class query="MyClass"
+// Usage: intellij-cli action find_class query="SC"     (camelCase: matches SomeClass)
+// NOTE: Always quote the query value with double quotes.
 // Uses GotoClassContributor — the same engine as "Go to Class" (Ctrl+N) / Search Everywhere.
 // Works across all JetBrains IDEs and languages (Java, Kotlin, PHP, Python, etc.)
 
@@ -7,7 +9,7 @@ import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.openapi.project.DumbService
 
 // --- Configure ---
-val query: String? = null  // class/interface name, supports camelCase (e.g. "SC" matches "SomeClass")
+val query: String? = null  // always quote: query="ClassName" or camelCase abbreviation query="SC"
 val limit: Int     = 50    // maximum number of results
 // -----------------
 
@@ -27,39 +29,43 @@ fun buildClassPattern(q: String): Regex {
 if (DumbService.getInstance(project).isDumb) {
     println("Error: IDE is currently indexing. Wait for indexing to complete.")
 } else if (query.isNullOrBlank()) {
-    println("Error: 'query' must be specified (e.g. query=MyClass or query=SC for SomeClass).")
+    println("Error: 'query' must be specified (e.g. query=\"MyClass\" or query=\"SC\" for SomeClass).")
 } else {
     val pattern = buildClassPattern(query)
     val contributors = ChooseByNameContributor.CLASS_EP_NAME.extensionList
 
-    data class Result(val name: String, val location: String)
-    val results = mutableListOf<Result>()
+    data class Result(val name: String, val namespace: String)
+    val seen = linkedSetOf<Result>()
 
     readAction {
         for (contributor in contributors) {
-            if (results.size >= limit) break
+            if (seen.size >= limit) break
             val names = contributor.getNames(project, false)
                 .filter { pattern.containsMatchIn(it) }
             for (name in names) {
-                if (results.size >= limit) break
+                if (seen.size >= limit) break
                 for (item in contributor.getItemsByName(name, query, project, false)) {
-                    if (results.size >= limit) break
+                    if (seen.size >= limit) break
                     val presentation = item.presentation ?: continue
                     val displayName = presentation.presentableText ?: name
-                    val location = presentation.locationString ?: ""
-                    results.add(Result(displayName, location))
+                    val namespace = presentation.locationString ?: ""
+                    seen.add(Result(displayName, namespace))
                 }
             }
         }
     }
 
-    if (results.isEmpty()) {
+    if (seen.isEmpty()) {
         println("No classes found matching '$query'")
     } else {
-        println("Found ${results.size} result(s) for '$query':\n")
-        for (r in results.sortedBy { it.name }) {
-            println(r.name)
-            if (r.location.isNotBlank()) println("  ${r.location}")
+        val sorted = seen.sortedWith(compareBy({ it.name }, { it.namespace }))
+        println("Found ${sorted.size} result(s) for '$query':\n")
+        for (r in sorted) {
+            if (r.namespace.isNotBlank()) {
+                println("${r.name}  [${r.namespace}]")
+            } else {
+                println(r.name)
+            }
         }
     }
 }

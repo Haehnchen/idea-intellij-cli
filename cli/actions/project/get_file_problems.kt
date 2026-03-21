@@ -1,8 +1,8 @@
 // Action: Inspect Code - run code inspections to find errors and warnings (compact text output)
-// Usage: intellij-cli action get_file_problems path=src/Foo.kt
-//        intellij-cli action get_file_problems path=src/main/kotlin recursive=true
-//        intellij-cli action get_file_problems path=src/Foo.kt errorsOnly=true
-//        intellij-cli action get_file_problems path=src/Foo.kt inspection=UnusedDeclaration
+// Usage: intellij-cli action get_file_problems path="src/Foo.kt"
+//        intellij-cli action get_file_problems path="src/main/kotlin" recursive=true
+//        intellij-cli action get_file_problems path="src/Foo.kt" errorsOnly=true
+//        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration"
 //
 // Output format (one problem per line, grouped by file):
 //   <file>
@@ -22,6 +22,7 @@ import com.intellij.codeInspection.InspectionManager
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.DumbService
@@ -31,6 +32,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
+import java.util.concurrent.Callable
 
 // --- Configure ---
 val path: String = ""
@@ -190,41 +192,42 @@ if (path.isEmpty()) {
         when {
             files.isEmpty() -> println("No files found in directory: $path")
             files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
-            else -> readAction {
+            else -> {
                 val psiManager = PsiManager.getInstance(project)
                 val allProblems = mutableListOf<Problem>()
 
                 for (vf in files) {
-                    val psiFile = psiManager.findFile(vf) ?: continue
-                    val document = FileDocumentManager.getInstance().getDocument(vf) ?: continue
                     val relativePath = vf.path.removePrefix(project.basePath ?: "").trimStart('/')
-
-                    val problems = if (inspection.isNotEmpty()) {
-                        inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), relativePath) }
-                    } else {
-                        runAllInspections(psiFile, document, relativePath)
-                    }
-                    allProblems.addAll(problems)
+                    val fileProblems = ReadAction.nonBlocking(Callable {
+                        val psiFile = psiManager.findFile(vf) ?: return@Callable emptyList<Problem>()
+                        val document = FileDocumentManager.getInstance().getDocument(vf) ?: return@Callable emptyList<Problem>()
+                        if (inspection.isNotEmpty()) {
+                            inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), relativePath) }
+                        } else {
+                            runAllInspections(psiFile, document, relativePath)
+                        }
+                    }).inSmartMode(project).executeSynchronously()
+                    allProblems.addAll(fileProblems)
                 }
 
                 printProblems(allProblems)
             }
         }
     } else {
-        readAction {
-            val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
-            val document = FileDocumentManager.getInstance().getDocument(virtualFile)
-
-            if (psiFile == null || document == null) {
-                println("Error: Cannot parse file: $path")
+        val problems = ReadAction.nonBlocking(Callable {
+            val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return@Callable null
+            val document = FileDocumentManager.getInstance().getDocument(virtualFile) ?: return@Callable null
+            if (inspection.isNotEmpty()) {
+                inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), path) }
             } else {
-                val problems = if (inspection.isNotEmpty()) {
-                    inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), path) }
-                } else {
-                    runAllInspections(psiFile, document, path)
-                }
-                printProblems(problems)
+                runAllInspections(psiFile, document, path)
             }
+        }).inSmartMode(project).executeSynchronously()
+
+        if (problems == null) {
+            println("Error: Cannot parse file: $path")
+        } else {
+            printProblems(problems)
         }
     }
 }

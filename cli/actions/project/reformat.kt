@@ -1,5 +1,5 @@
 // Action: Reformat a file using the project's code style settings
-// Usage: intellij-cli action reformat file=src/main/kotlin/com/example/Foo.kt
+// Usage: intellij-cli action reformat file="src/main/kotlin/com/example/Foo.kt"
 
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.vfs.LocalFileSystem

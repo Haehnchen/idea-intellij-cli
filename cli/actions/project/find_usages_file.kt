@@ -1,16 +1,18 @@
 // Action: Find all references to a file (imports, includes, requires, etc.)
-// Usage: intellij-cli action find_usages project=delos file=templates/dashboard/empty.html.twig
+// Usage: intellij-cli action find_usages project="delos" file="templates/dashboard/empty.html.twig"
 // Searches for direct references to the PsiFile using the standard IntelliJ reference search.
 
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
-import com.intellij.usages.impl.rules.UsageType
 import com.intellij.usages.impl.rules.UsageTypeProvider
 import com.intellij.util.Processor
+import java.util.concurrent.Callable
 
 // --- Configure ---
 val file: String? = null   // relative to project root, e.g. "src/main/kotlin/Foo.kt" — required
@@ -28,18 +30,19 @@ if (DumbService.getInstance(project).isDumb) {
     if (virtualFile == null) {
         println("Error: File not found: $file")
     } else {
-        readAction {
+        val lines = ReadAction.nonBlocking(Callable {
+            val out = mutableListOf<String>()
             val psiFile = PsiManager.getInstance(project).findFile(virtualFile)
 
             if (psiFile == null) {
-                println("Error: Could not parse file: $file")
+                out.add("Error: Could not parse file: $file")
             } else {
                 val projectBase = project.basePath ?: ""
                 val docManager = PsiDocumentManager.getInstance(project)
                 val usageTypeProviders = UsageTypeProvider.EP_NAME.extensionList
 
-                println("File: $file")
-                println("=".repeat(60))
+                out.add("File: $file")
+                out.add("=".repeat(60))
 
                 data class UsageEntry(
                     val usageFile: String,
@@ -52,7 +55,7 @@ if (DumbService.getInstance(project).isDumb) {
                 val usagesByType = LinkedHashMap<String, MutableList<UsageEntry>>()
                 var totalCount = 0
 
-                ReferencesSearch.search(psiFile).forEach(Processor { ref ->
+                ReferencesSearch.search(psiFile, GlobalSearchScope.projectScope(project)).forEach(Processor { ref ->
                     if (totalCount >= limit) return@Processor false
 
                     val refElement = ref.element
@@ -88,19 +91,22 @@ if (DumbService.getInstance(project).isDumb) {
                 })
 
                 if (totalCount == 0) {
-                    println("No file references found.")
+                    out.add("No file references found.")
                 } else {
-                    println("Found $totalCount reference(s):\n")
+                    out.add("Found $totalCount reference(s):\n")
                     for ((typeName, entries) in usagesByType) {
-                        println("  [$typeName] (${entries.size})")
+                        out.add("  [$typeName] (${entries.size})")
                         for (e in entries.sortedWith(compareBy({ it.usageFile }, { it.usageLine }))) {
-                            println("    ${e.usageFile}:${e.usageLine}:${e.usageCol}")
-                            println("      ${e.usageContext}")
+                            out.add("    ${e.usageFile}:${e.usageLine}:${e.usageCol}")
+                            out.add("      ${e.usageContext}")
                         }
-                        println()
+                        out.add("")
                     }
                 }
             }
-        }
+            out
+        }).executeSynchronously()
+
+        for (line in lines) println(line)
     }
 }
