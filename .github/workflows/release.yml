@@ -101,6 +101,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^${{ github.ref_name }}$" | head -n1)
+          if [ -n "$PREV_TAG" ]; then
+            NOTES=$(git log "${PREV_TAG}".."${{ github.ref_name }}" --pretty=format:"- %s" --no-merges)
+          else
+            NOTES=$(git log "${{ github.ref_name }}" --pretty=format:"- %s" --no-merges)
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -111,6 +128,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           make_latest: true
+          body: ${{ steps.notes.outputs.notes }}
           files: |
             artifacts/*.zip
             artifacts/skill.md
