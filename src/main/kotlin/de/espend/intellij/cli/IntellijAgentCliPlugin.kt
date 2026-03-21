@@ -1,6 +1,7 @@
 package de.espend.intellij.cli
 
-import com.intellij.openapi.application.ApplicationActivationListener
+import com.intellij.ide.AppLifecycleListener
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import de.espend.intellij.cli.server.HttpServer
@@ -12,7 +13,7 @@ import de.espend.intellij.cli.settings.PluginSettings
  * The server is disabled by default and must be enabled in settings.
  */
 @Service(Service.Level.APP)
-class IntellijAgentCliPlugin {
+class IntellijAgentCliPlugin : Disposable {
 
     private var server: HttpServer? = null
 
@@ -40,6 +41,10 @@ class IntellijAgentCliPlugin {
         server = null
     }
 
+    override fun dispose() {
+        stopServer()
+    }
+
     companion object {
         val instance: IntellijAgentCliPlugin
             get() = service()
@@ -47,12 +52,11 @@ class IntellijAgentCliPlugin {
 }
 
 /**
- * Application listener to start the server when the IDE starts.
- * The server will only start if it's enabled in settings.
+ * Starts the HTTP server when the IDE finishes initializing.
+ * Uses AppLifecycleListener which supports dynamic plugin loading.
  */
-class IdeStartupListener : ApplicationActivationListener {
-    override fun applicationActivated(ideFrame: com.intellij.openapi.wm.IdeFrame) {
-        // Start the HTTP server when IDE is activated (if enabled in settings)
+class IdeStartupListener : AppLifecycleListener {
+    override fun appStarted() {
         IntellijAgentCliPlugin.instance.startServer()
     }
 }
