@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "de.espend.intellij-agent-cli"
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("pluginVersion").get()
 
 repositories {
     mavenCentral()

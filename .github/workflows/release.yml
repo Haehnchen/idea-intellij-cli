@@ -21,7 +21,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build Plugin
-        run: ./gradlew buildPlugin
+        run: ./gradlew patchPluginXml buildPlugin
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
@@ -62,7 +62,9 @@ jobs:
         run: |
           EXT=""
           [ "${{ matrix.goos }}" = "windows" ] && EXT=".exe"
-          go build -o "intellij-cli${EXT}" .
+          VERSION="${{ github.ref_name }}"
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          go build -ldflags "-X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" -o "intellij-cli${EXT}" .
           zip "intellij-cli-${{ matrix.goos }}-${{ matrix.goarch }}.zip" "intellij-cli${EXT}"
 
       - name: Upload CLI artifact
