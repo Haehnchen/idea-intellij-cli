@@ -24,7 +24,7 @@ var embeddedActions embed.FS
 
 const (
 	defaultPort      = 8568
-	defaultTimeout   = 60
+	defaultTimeout   = 300
 	discoveryTimeout = 1 // seconds for IDE discovery calls
 )
 
@@ -127,7 +127,7 @@ func main() {
 	}
 
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "P", defaultPort, "HTTP server port (optional, auto-discovered)")
-	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", defaultTimeout, "Request timeout in seconds")
+	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", defaultTimeout, "Request timeout in seconds (default 300)")
 	rootCmd.PersistentFlags().StringVarP(&project, "project", "p", "", "Project name or path (optional, auto-discovered)")
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		portExplicit = cmd.Flags().Changed("port")
@@ -278,6 +278,9 @@ func makeRequest(method, path string, body interface{}) ([]byte, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
+		if os.IsTimeout(err) {
+			return nil, fmt.Errorf("request timed out after %ds (use -t to increase)", timeout)
+		}
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()

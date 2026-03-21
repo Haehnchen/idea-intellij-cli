@@ -38,6 +38,7 @@ val path: String = ""         // file path, directory, or glob pattern (e.g. "sr
 val recursive: Boolean = true // recurse into subdirectories when path is a directory
 val errorsOnly: Boolean = false // only report ERROR severity to skip INFO/WEAK_WARNING, or inspection=<id> to filter a specific rule
 val inspection: String = ""   // run a specific inspection by id, e.g. "UnusedDeclaration"; comma-separated to run multiple, e.g. "UnusedDeclaration,KotlinRedundantDiagnosticSuppress"
+val maxFiles: Int = 500       // maximum number of files to inspect
 // -----------------
 
 data class Problem(
@@ -117,7 +118,6 @@ fun inspectFiles(files: List<VirtualFile>): List<Problem> {
 fun collectFiles(vf: VirtualFile): List<VirtualFile> {
     val result = mutableListOf<VirtualFile>()
     fun collect(v: VirtualFile) {
-        if (result.size >= 50) return
         if (!v.isDirectory) result.add(v)
         else if (recursive) v.children?.forEach { collect(it) }
         else v.children?.filter { !it.isDirectory }?.forEach { result.add(it) }
@@ -132,7 +132,7 @@ fun collectGlobFiles(glob: String): List<VirtualFile> {
     val matched = mutableListOf<VirtualFile>()
     Files.walk(root).use { stream ->
         stream.filter { !Files.isDirectory(it) && matcher.matches(it) }.forEach { path ->
-            if (matched.size < 50) {
+            if (matched.size < maxFiles) {
                 LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)?.let { matched.add(it) }
             }
         }
@@ -197,7 +197,7 @@ if (path.isEmpty()) {
         val files = collectGlobFiles(path)
         when {
             files.isEmpty() -> println("No files matched glob: $path")
-            files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
+            files.size > maxFiles -> println("Error: Too many files (${files.size}), max $maxFiles. Hints: raise the limit with maxFiles=1000, reduce scope with a subdirectory path, or use a glob to filter by extension e.g. path=\"src/**/*.php\"")
             else -> printProblems(inspectFiles(files))
         }
     } else {
@@ -209,7 +209,7 @@ if (path.isEmpty()) {
             val files = collectFiles(virtualFile)
             when {
                 files.isEmpty() -> println("No files found in directory: $path")
-                files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
+                files.size > maxFiles -> println("Error: Too many files (${files.size}), max $maxFiles. Hints: raise the limit with maxFiles=1000, reduce scope with a subdirectory path, or use a glob to filter by extension e.g. path=\"src/**/*.php\"")
                 else -> printProblems(inspectFiles(files))
             }
         } else {

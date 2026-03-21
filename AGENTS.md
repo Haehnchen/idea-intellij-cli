@@ -45,7 +45,7 @@ intellij-cli actions             # List available scripts
 
 **Options:**
 - `-P, --port` - HTTP port (default: 8568)
-- `-t, --timeout` - Request timeout in seconds (default: 60)
+- `-t, --timeout` - Request timeout in seconds (default: 300)
 
 ### 3. Action Scripts (`cli/actions/*`)
 
