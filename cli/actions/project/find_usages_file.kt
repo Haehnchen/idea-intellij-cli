@@ -1,5 +1,5 @@
 // Action: Find all references to a file (imports, includes, requires, etc.)
-// Usage: intellij-cli action find_usages project="delos" file="templates/dashboard/empty.html.twig"
+// Usage: intellij-cli action find_usages project="my-project" file="src/main/kotlin/Foo.kt"
 // Searches for direct references to the PsiFile using the standard IntelliJ reference search.
 
 import com.intellij.openapi.application.ReadAction

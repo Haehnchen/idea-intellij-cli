@@ -1,5 +1,10 @@
 // Action: Find all usages of a class by name (language-agnostic)
 // Usage: intellij-cli action find_usages_class name="FoobarService"
+// Usage: intellij-cli action find_usages_class name="FoobarService" limit=50
+//
+// Parameters:
+//   name=<string>   class name — required
+//   limit=<int>     maximum number of results (default: 200)
 
 import com.intellij.navigation.ChooseByNameContributor
 import com.intellij.openapi.application.ReadAction

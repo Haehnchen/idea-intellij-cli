@@ -1,37 +1,80 @@
-// Action: Optimize imports for a file
-// Usage: intellij-cli action optimize_imports file="src/main/kotlin/com/example/Foo.kt"
+// Action: Optimize imports for files
+// Usage: intellij-cli action optimize_imports
+//        intellij-cli action optimize_imports file="src/main/kotlin/com/example/Foo.kt"
+//        intellij-cli action optimize_imports file="src/main/kotlin/**/*.kt"
 
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor
 import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiManager
+import java.nio.file.FileSystems
+import java.nio.file.Files
 
 // --- Configure ---
-val file: String = ""  // relative to project root, e.g. "src/main/kotlin/com/example/Foo.kt"
+val file: String = ""  // file path, glob pattern, or empty to optimize all project files
 // -----------------
+
+val basePath = project.basePath ?: error("Project base path not available")
+
+val ignoredDirs = setOf("node_modules", "target", "build", "out", ".git", ".gradle", ".idea")
+
+fun collectGlobFiles(glob: String): List<VirtualFile> {
+    val root = java.nio.file.Paths.get(basePath)
+    val matcher = FileSystems.getDefault().getPathMatcher("glob:${root}/$glob")
+    val matched = mutableListOf<VirtualFile>()
+    Files.walk(root).use { stream ->
+        stream.filter { !Files.isDirectory(it) && matcher.matches(it) }.forEach { p ->
+            LocalFileSystem.getInstance().findFileByNioFile(p)?.let { matched.add(it) }
+        }
+    }
+    return matched
+}
+
+fun collectAllFiles(): List<VirtualFile> {
+    val root = java.nio.file.Paths.get(basePath)
+    val matched = mutableListOf<VirtualFile>()
+    Files.walk(root).use { stream ->
+        stream.filter { p ->
+            !Files.isDirectory(p) && p.none { part -> part.toString() in ignoredDirs }
+        }.forEach { p ->
+            LocalFileSystem.getInstance().findFileByNioFile(p)?.let { matched.add(it) }
+        }
+    }
+    return matched
+}
+
+fun optimizeImportsForFile(virtualFile: VirtualFile): Boolean {
+    val relativePath = virtualFile.path.removePrefix(basePath).trimStart('/')
+    val psiFile = readAction { PsiManager.getInstance(project).findFile(virtualFile) }
+                  as? com.intellij.psi.PsiFile ?: return false
+    application.invokeAndWait {
+        OptimizeImportsProcessor(project, psiFile).run()
+    }
+    println("Imports optimized: $relativePath")
+    return true
+}
 
 if (DumbService.getInstance(project).isDumb) {
     println("Error: IDE is currently indexing. Wait for indexing to complete.")
-} else if (file.isBlank()) {
-    println("Error: file parameter is required.")
-    println("Usage: intellij-cli action optimize_imports file=src/main/kotlin/com/example/Foo.kt")
 } else {
-    val virtualFile = LocalFileSystem.getInstance().findFileByPath("${project.basePath}/$file")
+    val isGlob = file.contains('*') || file.contains('?') || file.contains('[')
 
-    if (virtualFile == null) {
-        println("Error: File not found: $file")
-    } else {
-        val relativePath = virtualFile.path.removePrefix(project.basePath ?: "").trimStart('/')
-        val psiFile = readAction { PsiManager.getInstance(project).findFile(virtualFile) }
-                      as? com.intellij.psi.PsiFile
-
-        if (psiFile == null) {
-            println("Error: Could not parse file: $relativePath")
-        } else {
-            application.invokeAndWait {
-                OptimizeImportsProcessor(project, psiFile).run()
-            }
-            println("Imports optimized: $relativePath")
+    val files: List<VirtualFile> = when {
+        file.isBlank() -> collectAllFiles()
+        isGlob -> collectGlobFiles(file)
+        else -> {
+            val fullPath = if (file.startsWith("/")) file else "$basePath/$file"
+            listOfNotNull(LocalFileSystem.getInstance().findFileByPath(fullPath)
+                .also { if (it == null) println("Error: File not found: $file") })
         }
+    }
+
+    if (files.isNotEmpty()) {
+        var count = 0
+        for (vf in files) {
+            if (optimizeImportsForFile(vf)) count++
+        }
+        println("Done: $count file(s) optimized.")
     }
 }

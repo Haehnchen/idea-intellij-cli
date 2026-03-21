@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,12 @@ const (
 	defaultPort      = 8568
 	defaultTimeout   = 60
 	discoveryTimeout = 1 // seconds for IDE discovery calls
+)
+
+// Set via -ldflags at build time.
+var (
+	version   = "dev"
+	buildTime = "unknown"
 )
 
 // idePort maps IDE display names to their default server ports.
@@ -109,8 +116,10 @@ func main() {
 		Use:               "intellij-cli",
 		Short:             "CLI tool for IntelliJ Agent operations",
 		Long:              `Command-line interface for interacting with IntelliJ IDEA via the Agent CLI plugin.`,
+		Version:           fmt.Sprintf("%s (built %s)", version, buildTime),
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("intellij-cli %s (built %s)\n\n", version, buildTime)
 			cmd.Help()
 			fmt.Println()
 			runListActions(cmd, args)
@@ -418,6 +427,7 @@ func runProjects(cmd *cobra.Command, args []string) {
 		url := fmt.Sprintf("http://127.0.0.1:%d", ide.Port)
 		for _, p := range ide.Projects {
 			p["serverUrl"] = url
+			p["ideName"] = ide.Name
 			allProjects = append(allProjects, p)
 		}
 	}
@@ -431,24 +441,20 @@ func printProjectList(projects []map[string]interface{}) {
 		return
 	}
 
-	for i, p := range projects {
-		name := p["name"]
-		basePath := p["basePath"]
-		focused := p["hasFocus"]
-
-		focusMarker := ""
-		if focused == true {
-			focusMarker = " [ACTIVE]"
+	w := csv.NewWriter(os.Stdout)
+	w.Write([]string{"name", "ide", "path", "server", "active"})
+	for _, p := range projects {
+		name, _ := p["name"].(string)
+		ideName, _ := p["ideName"].(string)
+		basePath, _ := p["basePath"].(string)
+		serverUrl, _ := p["serverUrl"].(string)
+		active := ""
+		if p["hasFocus"] == true {
+			active = "true"
 		}
-
-		fmt.Printf("%d. %s%s\n", i+1, name, focusMarker)
-		if basePath != nil && basePath != "" {
-			fmt.Printf("   Path: %s\n", basePath)
-		}
-		if serverUrl, ok := p["serverUrl"].(string); ok && serverUrl != "" {
-			fmt.Printf("   Server: %s\n", serverUrl)
-		}
+		w.Write([]string{name, ideName, basePath, serverUrl, active})
 	}
+	w.Flush()
 }
 
 // stripValDeclarations removes top-level "val <key> = ..." lines from code
@@ -747,7 +753,7 @@ func runExec(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		needsProject = isProjectAction
-		fmt.Printf("Executing: %s\n\n", resolvedPath)
+		fmt.Printf("Executing: %s\n", resolvedPath)
 	} else {
 		fmt.Fprintln(os.Stderr, "Error: Either -c (code) or -f (file) is required")
 		fmt.Fprintln(os.Stderr, "")
@@ -763,8 +769,12 @@ func runExec(cmd *cobra.Command, args []string) {
 	// Resolve project only for project-level actions
 	if needsProject {
 		project, defines = resolveProject(project, defines)
+		fmt.Printf("Project:   %s  %s\n", project, getBaseURL())
 	} else if !portExplicit {
 		resolveIDE()
+		fmt.Println()
+	} else {
+		fmt.Println()
 	}
 
 	// Inject -D defines as Kotlin val declarations, inserted after the last import line
@@ -1071,7 +1081,7 @@ func buildSkillContent() string {
 	var buf strings.Builder
 	buf.WriteString(`---
 name: intellij-cli
-description: Access JetBrains IDE intelligence to find errors and warnings, analyze code, find usages, run diagnostics, refactor, navigate codebases, programmatically control, and notify the user via IDE notifications across IntelliJ IDEA, PhpStorm, WebStorm, GoLand, PyCharm and other JetBrains IDEs
+description: Access JetBrains IDE intelligence to find errors and warnings, analyze code, find usages, run diagnostics, refactor, navigate codebases, programmatically control, and notify the user via IDE notifications across IntelliJ IDEA, PhpStorm, WebStorm, GoLand, PyCharm and other IDEs. If the working directory contains a `.idea/` folder, it is likely a supported project.
 ---
 
 `)
@@ -1235,12 +1245,16 @@ func runActionCmd(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Executing: %s\n\n", resolvedPath)
+	fmt.Printf("Executing: %s\n", resolvedPath)
 
 	if isProjectAction {
 		project, defines = resolveProject(project, defines)
+		fmt.Printf("Project:   %s  %s\n", project, getBaseURL())
 	} else if !portExplicit {
 		resolveIDE()
+		fmt.Println()
+	} else {
+		fmt.Println()
 	}
 
 	if len(defines) > 0 {

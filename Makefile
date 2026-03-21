@@ -9,8 +9,11 @@ build-plugin:
 	./gradlew buildPlugin
 
 # Build the CLI tool
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+
 build-cli:
-	cd cli && go mod tidy && go build -o intellij-cli
+	cd cli && go mod tidy && go build -ldflags="-s -w -X main.version=$(VERSION) -X main.buildTime=$(BUILD_TIME)" -o intellij-cli
 
 # Build everything for release
 release: build-plugin build-cli

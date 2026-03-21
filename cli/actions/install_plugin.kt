@@ -1,69 +1,22 @@
 // Action: Install or update a plugin from a local ZIP/JAR file
 // Usage: intellij-cli action install_plugin file="/absolute/path/to/plugin.zip"
+// Usage: intellij-cli action install_plugin file="/absolute/path/to/plugin.zip" force_restart=true
+//
+// Parameters:
+//   file=<string>            absolute path to plugin ZIP or JAR
+//   force_restart=<bool>     restart IDE after scheduling install (default: false)
 
 import com.intellij.ide.plugins.IdeaPluginDescriptorImpl
 import com.intellij.ide.plugins.PluginInstaller
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.PluginNode
-import com.intellij.openapi.extensions.PluginId
-import java.nio.file.Path
+import com.intellij.openapi.application.ApplicationManager
 import java.nio.file.Paths
-import java.util.zip.ZipFile
-import javax.xml.parsers.DocumentBuilderFactory
-import org.xml.sax.InputSource
-import java.io.StringReader
 
 // --- Configure ---
-val file: String = ""  // absolute path to plugin ZIP or JAR
+val file: String           = ""    // absolute path to plugin ZIP or JAR
+val force_restart: Boolean = false // restart IDE after scheduling install
 // -----------------
-
-fun readPluginXmlFromZip(zipPath: Path): String? {
-    return try {
-        ZipFile(zipPath.toFile()).use { zip ->
-            // 1. Try direct: META-INF/plugin.xml at root of zip
-            val direct = zip.entries().asSequence().firstOrNull { e ->
-                e.name.endsWith("/META-INF/plugin.xml") || e.name == "META-INF/plugin.xml"
-            }
-            if (direct != null) return zip.getInputStream(direct).bufferedReader().readText()
-
-            // 2. plugin.xml is nested inside a JAR within the zip (IntelliJ plugin distribution format)
-            val jarEntry = zip.entries().asSequence().firstOrNull { e ->
-                e.name.endsWith(".jar") && !e.isDirectory &&
-                    !e.name.contains("/lib/kotlin") && !e.name.contains("/lib/jetty") &&
-                    !e.name.contains("/lib/javalin") && !e.name.contains("annotations")
-            } ?: return null
-
-            val jarBytes = zip.getInputStream(jarEntry).readBytes()
-            val innerZip = java.util.zip.ZipInputStream(jarBytes.inputStream())
-            var entry = innerZip.nextEntry
-            while (entry != null) {
-                if (entry.name == "META-INF/plugin.xml") {
-                    return innerZip.readBytes().toString(Charsets.UTF_8)
-                }
-                entry = innerZip.nextEntry
-            }
-            null
-        }
-    } catch (e: Exception) {
-        null
-    }
-}
-
-fun parsePluginXml(xml: String): Triple<String, String, String>? {
-    return try {
-        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder()
-            .parse(InputSource(StringReader(xml)))
-        val root = doc.documentElement
-        val id = root.getElementsByTagName("id").item(0)?.textContent?.trim()
-            ?: root.getElementsByTagName("name").item(0)?.textContent?.trim()
-            ?: return null
-        val name = root.getElementsByTagName("name").item(0)?.textContent?.trim() ?: id
-        val version = root.getElementsByTagName("version").item(0)?.textContent?.trim() ?: "unknown"
-        Triple(id, name, version)
-    } catch (e: Exception) {
-        null
-    }
-}
 
 if (file.isEmpty()) {
     println("ERROR: file parameter is required")
@@ -74,22 +27,25 @@ if (file.isEmpty()) {
     if (!pluginPath.toFile().exists()) {
         println("ERROR: File not found: $file")
     } else {
-        val xml = readPluginXmlFromZip(pluginPath)
-        if (xml == null) {
-            println("ERROR: Could not find META-INF/plugin.xml in: $file")
+        // Use IntelliJ's own descriptor loader (same logic as the plugin manager UI)
+        val loadMethod = PluginInstaller::class.java
+            .getDeclaredMethod("lambda\$installFromDisk\$0", java.nio.file.Path::class.java)
+        loadMethod.isAccessible = true
+        val descriptor = loadMethod.invoke(null, pluginPath) as? IdeaPluginDescriptorImpl
+
+        if (descriptor == null) {
+            println("ERROR: Could not load plugin descriptor from: $file")
         } else {
-            val parsed = parsePluginXml(xml)
-            if (parsed == null) {
-                println("ERROR: Failed to parse plugin.xml")
-            } else { val (pluginId, pluginName, pluginVersion) = parsed
+            val pluginId   = descriptor.pluginId
+            val pluginName = descriptor.name
+            val pluginVersion = descriptor.version
 
             println("Plugin:  $pluginName")
             println("ID:      $pluginId")
             println("Version: $pluginVersion")
             println()
 
-            val id = PluginId.getId(pluginId)
-            val existing = PluginManagerCore.getPlugin(id)
+            val existing = PluginManagerCore.getPlugin(pluginId)
             if (existing != null) {
                 println("Installed: v${existing.version} → updating to v$pluginVersion")
             } else {
@@ -97,37 +53,32 @@ if (file.isEmpty()) {
             }
             println()
 
-            // Try dynamic install first (reflection on private loader)
-            val dynamicResult = runCatching {
-                val loadMethod = PluginInstaller::class.java
-                    .getDeclaredMethod("lambda\$installFromDisk\$0", Path::class.java)
-                loadMethod.isAccessible = true
-                val descriptor = loadMethod.invoke(null, pluginPath) as? IdeaPluginDescriptorImpl
-                if (descriptor != null) {
-                    PluginInstaller.installAndLoadDynamicPlugin(pluginPath, descriptor)
-                } else {
-                    false
-                }
+            // Try dynamic install first (no restart required)
+            val dynamic = runCatching {
+                PluginInstaller.installAndLoadDynamicPlugin(pluginPath, descriptor)
             }
 
-            if (dynamicResult.getOrNull() == true) {
+            if (dynamic.getOrNull() == true) {
                 println("SUCCESS: Plugin installed and loaded dynamically (no restart required)")
             } else {
-                // Fall back: schedule install after restart using PluginNode
-                val restartResult = runCatching {
-                    val node = PluginNode(id, pluginName, pluginVersion)
-                    val existingPath = existing?.pluginPath
-                    PluginInstaller.installAfterRestart(node, pluginPath, existingPath, false)
+                // Fall back: schedule install after restart
+                val scheduled = runCatching {
+                    val node = PluginNode(pluginId, pluginName, pluginVersion)
+                    PluginInstaller.installAfterRestart(node, pluginPath, existing?.pluginPath, false)
                 }
 
-                if (restartResult.isSuccess) {
-                    println("SUCCESS: Plugin scheduled for installation — please restart IntelliJ")
+                if (scheduled.isSuccess) {
+                    if (force_restart) {
+                        println("SUCCESS: Plugin scheduled for installation — restarting IntelliJ now")
+                        ApplicationManager.getApplication().restart()
+                    } else {
+                        println("SUCCESS: Plugin scheduled for installation — please restart IntelliJ")
+                    }
                 } else {
                     println("ERROR: Installation failed")
-                    println(restartResult.exceptionOrNull()?.message ?: "unknown error")
+                    println(scheduled.exceptionOrNull()?.message ?: "unknown error")
                 }
             }
-            } // end parsed != null
         }
     }
 }

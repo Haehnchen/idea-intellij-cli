@@ -17,6 +17,8 @@ class PluginSettingsConfigurable : Configurable {
     private var enabledCheckBox: JBCheckBox? = null
     private var hintLabel: JBLabel? = null
     private var serverUrlLink: ActionLink? = null
+    private var showExecutionIndicatorCheckBox: JBCheckBox? = null
+    private var executionIndicatorHintLabel: JBLabel? = null
 
     override fun getDisplayName(): String = "Agent CLI"
 
@@ -46,9 +48,19 @@ class PluginSettingsConfigurable : Configurable {
             updateHint()
         }
 
+        showExecutionIndicatorCheckBox = JBCheckBox("Show background task indicator during script execution")
+
+        executionIndicatorHintLabel = JBLabel("Displays a progress indicator in the IDE status bar while a script is running").apply {
+            foreground = UIUtil.getContextHelpForeground()
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+        }
+
         panel = FormBuilder.createFormBuilder()
             .addComponent(enabledCheckBox!!)
             .addComponent(hintPanel)
+            .addVerticalGap(8)
+            .addComponent(showExecutionIndicatorCheckBox!!)
+            .addComponent(executionIndicatorHintLabel!!)
             .addComponentFillVertically(JPanel(), 0)
             .panel
 
@@ -69,6 +81,7 @@ class PluginSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val settings = PluginSettings.getInstance()
         return enabledCheckBox?.isSelected != settings.enabled
+            || showExecutionIndicatorCheckBox?.isSelected != settings.showExecutionIndicator
     }
 
     override fun apply() {
@@ -77,6 +90,7 @@ class PluginSettingsConfigurable : Configurable {
         val newEnabled = enabledCheckBox?.isSelected ?: false
 
         settings.enabled = newEnabled
+        settings.showExecutionIndicator = showExecutionIndicatorCheckBox?.isSelected ?: true
 
         if (oldEnabled != newEnabled) {
             val pluginService = de.espend.intellij.cli.IntellijAgentCliPlugin.instance
@@ -91,6 +105,7 @@ class PluginSettingsConfigurable : Configurable {
     override fun reset() {
         val settings = PluginSettings.getInstance()
         enabledCheckBox?.isSelected = settings.enabled
+        showExecutionIndicatorCheckBox?.isSelected = settings.showExecutionIndicator
         updateHint()
     }
 
@@ -99,5 +114,7 @@ class PluginSettingsConfigurable : Configurable {
         enabledCheckBox = null
         hintLabel = null
         serverUrlLink = null
+        showExecutionIndicatorCheckBox = null
+        executionIndicatorHintLabel = null
     }
 }

@@ -20,7 +20,8 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
      * Persistent state for plugin settings.
      */
     data class State(
-        var enabled: Boolean = false // Server is disabled by default
+        var enabled: Boolean = false, // Server is disabled by default
+        var showExecutionIndicator: Boolean = true // Show background task indicator during script execution
     )
 
     private var state = State()
@@ -34,6 +35,10 @@ class PluginSettings : PersistentStateComponent<PluginSettings.State> {
     var enabled: Boolean
         get() = state.enabled
         set(value) { state.enabled = value }
+
+    var showExecutionIndicator: Boolean
+        get() = state.showExecutionIndicator
+        set(value) { state.showExecutionIndicator = value }
 
     /**
      * Returns the IDE-specific server host (always 127.0.0.1).

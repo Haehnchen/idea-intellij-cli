@@ -1,5 +1,8 @@
 package de.espend.intellij.cli.server
 
+import com.intellij.openapi.progress.ProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.Task
 import de.espend.intellij.cli.execution.CodeExecutor
 import de.espend.intellij.cli.services.ProjectService
 import de.espend.intellij.cli.settings.PluginSettings
@@ -127,14 +130,33 @@ class HttpServer {
         }
 
         // Execute asynchronously to avoid blocking Javalin worker threads
-        ctx.future {
+        val resultFuture = CompletableFuture<CodeExecutor.ExecutionResult>()
+
+        if (PluginSettings.getInstance().showExecutionIndicator) {
+            ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Agent CLI: Executing script", false) {
+                override fun run(indicator: ProgressIndicator) {
+                    indicator.isIndeterminate = true
+                    try {
+                        val result = kotlinx.coroutines.runBlocking {
+                            codeExecutor.execute(project, request.code, request.timeout)
+                        }
+                        resultFuture.complete(result)
+                    } catch (e: Exception) {
+                        resultFuture.completeExceptionally(e)
+                    }
+                }
+            })
+        } else {
             CompletableFuture.supplyAsync {
                 kotlinx.coroutines.runBlocking {
                     codeExecutor.execute(project, request.code, request.timeout)
                 }
-            }.thenAccept { result ->
-                ctx.json(result)
-            }
+            }.thenAccept(resultFuture::complete)
+                .exceptionally { e -> resultFuture.completeExceptionally(e); null }
+        }
+
+        ctx.future {
+            resultFuture.thenAccept { result -> ctx.json(result) }
         }
     }
 
