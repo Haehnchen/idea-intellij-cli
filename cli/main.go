@@ -174,6 +174,29 @@ Examples:
 		Args: cobra.ArbitraryArgs,
 		Run:  runActionCmd,
 	}
+	actionCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		// Find action name from os.Args: look for the token after "action" that isn't a flag
+		actionName := ""
+		rawArgs := os.Args
+		for i, a := range rawArgs {
+			if a == "action" && i+1 < len(rawArgs) {
+				for _, candidate := range rawArgs[i+1:] {
+					if !strings.HasPrefix(candidate, "-") {
+						actionName = candidate
+						break
+					}
+				}
+				break
+			}
+		}
+		if actionName != "" {
+			if help, ok := buildActionHelp(actionName); ok {
+				fmt.Print(help)
+				return
+			}
+		}
+		_ = cmd.Usage()
+	})
 
 	// source command: show source code of an action script
 	var sourceCmd = &cobra.Command{
@@ -907,6 +930,59 @@ func buildActionListFromFS(fsys fs.FS, subdir string, isProjectDir bool) (string
 		}
 	}
 	return buf.String(), count
+}
+
+// buildActionHelp formats the full help for a single named action.
+// Returns the help string and true, or an error message and false.
+func buildActionHelp(name string) (string, bool) {
+	content, displayPath, isProjectAction, err := resolveActionFile(name)
+	if err != nil {
+		return fmt.Sprintf("Error: %v\n", err), false
+	}
+
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "Action: %s  (%s)\n\n", name, displayPath)
+
+	// Collect leading doc comments (all // lines at the top of the file)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") {
+			// Strip "// " or "//" prefix but preserve internal alignment spaces
+			doc := strings.TrimPrefix(trimmed, "// ")
+			if doc == trimmed {
+				doc = strings.TrimPrefix(trimmed, "//")
+			}
+			if doc != "" {
+				fmt.Fprintf(&buf, "%s\n", doc)
+			} else {
+				fmt.Fprintln(&buf)
+			}
+		} else if trimmed == "" {
+			continue
+		} else {
+			break
+		}
+	}
+
+	// Parameters section
+	params := parseScriptParams(content)
+	if isProjectAction || len(params) > 0 {
+		fmt.Fprintf(&buf, "\nParameters:\n")
+		if isProjectAction {
+			fmt.Fprintf(&buf, "  %-28s %s\n", "project=<string>", "project name or path (optional, auto-detected if only one open)")
+		}
+		for _, p := range params {
+			t := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(p.typeName, "?"), " "))
+			flag := fmt.Sprintf("%s=<%s>", p.name, t)
+			if p.description != "" {
+				fmt.Fprintf(&buf, "  %-28s %s\n", flag, p.description)
+			} else {
+				fmt.Fprintf(&buf, "  %s  (default: %s)\n", flag, p.defaultVal)
+			}
+		}
+	}
+
+	return buf.String(), true
 }
 
 func buildActionListFromDir(dir string, isProjectDir bool) (string, int) {

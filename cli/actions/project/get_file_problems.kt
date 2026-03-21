@@ -1,6 +1,7 @@
-// Action: Inspect Code - run code inspections to find errors and warnings (compact text output)
+// Action: Inspect Code - run code inspections to find errors and warnings
 // Usage: intellij-cli action get_file_problems path="src/Foo.kt"
 //        intellij-cli action get_file_problems path="src/main/kotlin" recursive=true
+//        intellij-cli action get_file_problems path="src/**/*.kt"
 //        intellij-cli action get_file_problems path="src/Foo.kt" errorsOnly=true
 //        intellij-cli action get_file_problems path="src/Foo.kt" inspection="UnusedDeclaration"
 //
@@ -17,6 +18,8 @@ import com.intellij.openapi.application.TransactionGuard
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
+import java.nio.file.FileSystems
+import java.nio.file.Files
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.codeInsight.daemon.impl.DaemonProgressIndicator
 import com.intellij.codeInsight.daemon.impl.HighlightingSessionImpl
@@ -38,10 +41,10 @@ import com.intellij.psi.PsiManager
 import java.util.concurrent.Callable
 
 // --- Configure ---
-val path: String = ""
-val recursive: Boolean = true
-val errorsOnly: Boolean = false
-val inspection: String = ""
+val path: String = ""         // file path, directory, or glob pattern (e.g. "src/Foo.kt", "src/main/kotlin", "src/**/*.kt")
+val recursive: Boolean = true // recurse into subdirectories when path is a directory
+val errorsOnly: Boolean = false // only report ERROR severity, skip warnings
+val inspection: String = ""   // run a specific inspection by id, e.g. "UnusedDeclaration" (comma-separated for multiple)
 // -----------------
 
 data class Problem(
@@ -156,6 +159,20 @@ fun collectFiles(vf: VirtualFile): List<VirtualFile> {
     return result
 }
 
+fun collectGlobFiles(glob: String): List<VirtualFile> {
+    val root = java.nio.file.Paths.get(project.basePath ?: return emptyList())
+    val matcher = FileSystems.getDefault().getPathMatcher("glob:${root}/$glob")
+    val matched = mutableListOf<VirtualFile>()
+    Files.walk(root).use { stream ->
+        stream.filter { !Files.isDirectory(it) && matcher.matches(it) }.forEach { path ->
+            if (matched.size < 50) {
+                LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path)?.let { matched.add(it) }
+            }
+        }
+    }
+    return matched
+}
+
 fun printProblems(problems: List<Problem>) {
     if (problems.isEmpty()) {
         println("No problems found.")
@@ -190,57 +207,68 @@ TransactionGuard.getInstance().submitTransactionAndWait {
     PsiDocumentManager.getInstance(project).commitAllDocuments()
 }
 
+fun inspectFiles(files: List<VirtualFile>): List<Problem> {
+    val psiManager = PsiManager.getInstance(project)
+    val allProblems = mutableListOf<Problem>()
+    for (vf in files) {
+        val relativePath = vf.path.removePrefix(project.basePath ?: "").trimStart('/')
+        val fileProblems = ReadAction.nonBlocking(Callable {
+            val psiFile = psiManager.findFile(vf) ?: return@Callable emptyList<Problem>()
+            val document = FileDocumentManager.getInstance().getDocument(vf) ?: return@Callable emptyList<Problem>()
+            if (inspection.isNotEmpty()) {
+                inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), relativePath) }
+            } else {
+                runAllInspections(psiFile, document, relativePath)
+            }
+        }).inSmartMode(project).executeSynchronously()
+        allProblems.addAll(fileProblems)
+    }
+    return allProblems
+}
+
 if (path.isEmpty()) {
     println("Error: path parameter is required")
 } else if (DumbService.getInstance(project).isDumb) {
     println("Error: IDE is indexing, please wait")
 } else {
-    val fullPath = "${project.basePath}/$path"
-    val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.file.Paths.get(fullPath))
+    val isGlob = path.contains('*') || path.contains('?') || path.contains('[')
 
-    if (virtualFile == null || !virtualFile.isValid) {
-        println("Error: Path not found: $path")
-    } else if (virtualFile.isDirectory) {
-        val files = collectFiles(virtualFile)
+    if (isGlob) {
+        val files = collectGlobFiles(path)
         when {
-            files.isEmpty() -> println("No files found in directory: $path")
+            files.isEmpty() -> println("No files matched glob: $path")
             files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
-            else -> {
-                val psiManager = PsiManager.getInstance(project)
-                val allProblems = mutableListOf<Problem>()
-
-                for (vf in files) {
-                    val relativePath = vf.path.removePrefix(project.basePath ?: "").trimStart('/')
-                    val fileProblems = ReadAction.nonBlocking(Callable {
-                        val psiFile = psiManager.findFile(vf) ?: return@Callable emptyList<Problem>()
-                        val document = FileDocumentManager.getInstance().getDocument(vf) ?: return@Callable emptyList<Problem>()
-                        if (inspection.isNotEmpty()) {
-                            inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), relativePath) }
-                        } else {
-                            runAllInspections(psiFile, document, relativePath)
-                        }
-                    }).inSmartMode(project).executeSynchronously()
-                    allProblems.addAll(fileProblems)
-                }
-
-                printProblems(allProblems)
-            }
+            else -> printProblems(inspectFiles(files))
         }
     } else {
-        val problems = ReadAction.nonBlocking(Callable {
-            val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return@Callable null
-            val document = FileDocumentManager.getInstance().getDocument(virtualFile) ?: return@Callable null
-            if (inspection.isNotEmpty()) {
-                inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), path) }
-            } else {
-                runAllInspections(psiFile, document, path)
-            }
-        }).inSmartMode(project).executeSynchronously()
+        val fullPath = "${project.basePath}/$path"
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(java.nio.file.Paths.get(fullPath))
 
-        if (problems == null) {
-            println("Error: Cannot parse file: $path")
+        if (virtualFile == null || !virtualFile.isValid) {
+            println("Error: Path not found: $path")
+        } else if (virtualFile.isDirectory) {
+            val files = collectFiles(virtualFile)
+            when {
+                files.isEmpty() -> println("No files found in directory: $path")
+                files.size > 50 -> println("Error: Too many files (${files.size}), max 50")
+                else -> printProblems(inspectFiles(files))
+            }
         } else {
-            printProblems(problems)
+            val problems = ReadAction.nonBlocking(Callable {
+                val psiFile = PsiManager.getInstance(project).findFile(virtualFile) ?: return@Callable null
+                val document = FileDocumentManager.getInstance().getDocument(virtualFile) ?: return@Callable null
+                if (inspection.isNotEmpty()) {
+                    inspection.split(",").flatMap { runSpecificInspection(psiFile, document, it.trim(), path) }
+                } else {
+                    runAllInspections(psiFile, document, path)
+                }
+            }).inSmartMode(project).executeSynchronously()
+
+            if (problems == null) {
+                println("Error: Cannot parse file: $path")
+            } else {
+                printProblems(problems)
+            }
         }
     }
 }
