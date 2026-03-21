@@ -50,6 +50,7 @@ object BinaryInstaller {
         val conn = URI(GITHUB_API_LATEST).toURL().openConnection() as HttpURLConnection
         conn.setRequestProperty("Accept", "application/vnd.github+json")
         conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        conn.setRequestProperty("User-Agent", "idea-intellij-cli-plugin")
         conn.connectTimeout = 10_000
         conn.readTimeout = 10_000
 
@@ -132,6 +133,7 @@ object BinaryInstaller {
 
     private fun downloadBytes(urlStr: String): ByteArray {
         val conn = URI(urlStr).toURL().openConnection() as HttpURLConnection
+        conn.setRequestProperty("User-Agent", "idea-intellij-cli-plugin")
         conn.connectTimeout = 30_000
         conn.readTimeout = 60_000
 
