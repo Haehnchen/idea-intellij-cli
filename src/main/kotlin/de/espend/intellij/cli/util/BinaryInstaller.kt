@@ -11,7 +11,6 @@ import java.util.zip.ZipInputStream
 object BinaryInstaller {
 
     const val RELEASES_PAGE_URL = "https://github.com/Haehnchen/idea-intellij-cli/releases"
-    private const val GITHUB_API_LATEST = "https://api.github.com/repos/Haehnchen/idea-intellij-cli/releases/latest"
 
     fun getOs(): String {
         val name = System.getProperty("os.name").lowercase()
@@ -44,32 +43,23 @@ object BinaryInstaller {
     fun getInstalledBinaryPath(): File = File(getInstallDir(), getBinaryName())
 
     /**
-     * Fetches the browser_download_url for the latest release asset matching our OS/arch.
+     * Resolves the latest release tag by following the /releases/latest redirect,
+     * then constructs the asset download URL directly — no GitHub API needed.
      */
     private fun getLatestDownloadUrl(assetName: String): String {
-        val conn = URI(GITHUB_API_LATEST).toURL().openConnection() as HttpURLConnection
-        conn.setRequestProperty("Accept", "application/vnd.github+json")
-        conn.setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        val conn = URI("$RELEASES_PAGE_URL/latest").toURL().openConnection() as HttpURLConnection
         conn.setRequestProperty("User-Agent", "idea-intellij-cli-plugin")
+        conn.instanceFollowRedirects = false
         conn.connectTimeout = 10_000
         conn.readTimeout = 10_000
 
-        if (conn.responseCode != 200) {
-            throw IOException("GitHub API returned ${conn.responseCode}: ${conn.responseMessage}")
-        }
+        val location = conn.getHeaderField("Location")
+            ?: throw IOException("GitHub did not redirect /releases/latest — cannot determine latest version.\nVisit $RELEASES_PAGE_URL to download manually.")
 
-        val json = conn.inputStream.bufferedReader().readText()
+        // Location: https://github.com/Owner/repo/releases/tag/v1.2.3
+        val tag = location.substringAfterLast("/")
 
-        // Find the asset object by name, then locate its browser_download_url.
-        // GitHub API lists name before browser_download_url within each asset object.
-        val nameIndex = json.indexOf("\"$assetName\"")
-        if (nameIndex == -1) throw IOException("No release asset named '$assetName' found in latest release.\nVisit $RELEASES_PAGE_URL for available downloads.")
-
-        val urlPattern = """"browser_download_url"\s*:\s*"([^"]+)"""".toRegex()
-        val match = urlPattern.find(json, nameIndex)
-            ?: throw IOException("No download URL found for asset '$assetName'")
-
-        return match.groupValues[1]
+        return "$RELEASES_PAGE_URL/download/$tag/$assetName"
     }
 
     /**
