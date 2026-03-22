@@ -174,7 +174,9 @@ fun printProblems(problems: List<Problem>) {
             if (context > 0) {
                 p.contextBefore.forEachIndexed { idx, content ->
                     val lineNum = p.line - p.contextBefore.size + idx
-                    println("    $lineNum | $content")
+                    val trimmedCtx = content.trim()
+                    val displayCtx = if (trimmedCtx.length > 180) trimmedCtx.take(180) + "... [truncated]" else trimmedCtx
+                    println("    $lineNum | $displayCtx")
                 }
             }
             val trimmed = p.lineContent.trim()
@@ -185,7 +187,9 @@ fun printProblems(problems: List<Problem>) {
             if (context > 0) {
                 p.contextAfter.forEachIndexed { idx, content ->
                     val lineNum = p.line + 1 + idx
-                    println("    $lineNum | $content")
+                    val trimmedCtx = content.trim()
+                    val displayCtx = if (trimmedCtx.length > 180) trimmedCtx.take(180) + "... [truncated]" else trimmedCtx
+                    println("    $lineNum | $displayCtx")
                 }
             }
         }
