@@ -106,6 +106,7 @@ var (
 	portExplicit bool
 	timeout      int
 	project      string
+	projectPath  string
 	code         string
 	codeFile     string
 	defines      []string
@@ -128,7 +129,7 @@ func main() {
 
 	rootCmd.PersistentFlags().IntVarP(&port, "port", "P", defaultPort, "HTTP server port (optional, auto-discovered)")
 	rootCmd.PersistentFlags().IntVarP(&timeout, "timeout", "t", defaultTimeout, "Request timeout in seconds (default 300)")
-	rootCmd.PersistentFlags().StringVarP(&project, "project", "p", "", "Project name or path (optional, auto-discovered)")
+	rootCmd.PersistentFlags().StringVarP(&project, "project", "p", "", "Optional; auto-discovered from CWD. Override with project name or path")
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		portExplicit = cmd.Flags().Changed("port")
 	}
@@ -444,6 +445,9 @@ func printProjectList(projects []map[string]interface{}) {
 		return
 	}
 
+	cwd, _ := os.Getwd()
+	normalizedCwd := strings.TrimRight(cwd, "/")
+
 	w := csv.NewWriter(os.Stdout)
 	w.Write([]string{"name", "ide", "path", "server", "active"})
 	for _, p := range projects {
@@ -452,7 +456,7 @@ func printProjectList(projects []map[string]interface{}) {
 		basePath, _ := p["basePath"].(string)
 		serverUrl, _ := p["serverUrl"].(string)
 		active := ""
-		if p["hasFocus"] == true {
+		if basePath != "" && strings.TrimRight(basePath, "/") == normalizedCwd {
 			active = "true"
 		}
 		w.Write([]string{name, ideName, basePath, serverUrl, active})
@@ -604,6 +608,13 @@ type projectWithPort struct {
 	port     int
 }
 
+// matchesProject reports whether the given project matches an identifier supplied by the user.
+// The identifier is matched against the project name or its absolute path.
+func matchesProject(p projectWithPort, identifier string) bool {
+	return p.name == identifier ||
+		strings.TrimRight(p.basePath, "/") == strings.TrimRight(identifier, "/")
+}
+
 // discoverAndCollectProjects discovers all IDEs and returns all projects with their ports.
 func discoverAndCollectProjects() []projectWithPort {
 	var ides []ideInstance
@@ -646,7 +657,7 @@ func discoverAndCollectProjects() []projectWithPort {
 }
 
 // resolveProject returns the project name to use and sets the global port.
-// Priority: explicit flag (-p) > positional project=name arg > auto-detect via discovery.
+// Priority: explicit flag (-p) > positional project=<name|path> arg > auto-detect via discovery.
 // Auto-detect: if exactly one project is open, use it; otherwise error with list.
 func resolveProject(explicitProject string, defines []string) (string, []string) {
 	// Check if project=value was passed as a positional arg
@@ -655,14 +666,15 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 			val := strings.TrimPrefix(def, "project=")
 			remaining := append(defines[:i:i], defines[i+1:]...)
 			allProjects := discoverAndCollectProjects()
-			// Find matching project by name
+			// Find matching project by name or path
 			for _, p := range allProjects {
-				if p.name == val {
+				if matchesProject(p, val) {
 					port = p.port
+					projectPath = p.basePath
 					return p.name, remaining
 				}
 			}
-			// Not found by name — print available projects
+			// Not found by name or path — print available projects
 			fmt.Fprintf(os.Stderr, "Error: project %q not found in any running IDE.\n", val)
 			fmt.Fprintln(os.Stderr, "Available projects:")
 			for _, p := range allProjects {
@@ -678,14 +690,15 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 
 	if explicitProject != "" {
 		allProjects := discoverAndCollectProjects()
-		// Find matching project by name
+		// Find matching project by name or path
 		for _, p := range allProjects {
-			if p.name == explicitProject {
+			if matchesProject(p, explicitProject) {
 				port = p.port
+				projectPath = p.basePath
 				return p.name, defines
 			}
 		}
-		// Not found by name
+		// Not found by name or path
 		fmt.Fprintf(os.Stderr, "Error: project %q not found in any running IDE.\n", explicitProject)
 		fmt.Fprintln(os.Stderr, "Available projects:")
 		for _, p := range allProjects {
@@ -703,6 +716,7 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 
 	if len(allProjects) == 1 {
 		port = allProjects[0].port
+		projectPath = allProjects[0].basePath
 		return allProjects[0].name, defines
 	}
 
@@ -712,12 +726,13 @@ func resolveProject(explicitProject string, defines []string) (string, []string)
 		for _, p := range allProjects {
 			if p.basePath != "" && strings.TrimRight(p.basePath, "/") == normalizedCwd {
 				port = p.port
+				projectPath = p.basePath
 				return p.name, defines
 			}
 		}
 	}
 
-	fmt.Fprintln(os.Stderr, "Error: Multiple projects open. Specify one with project=<name>:")
+	fmt.Fprintln(os.Stderr, "Error: Multiple projects open. Specify one with project=<name|path>:")
 	for _, p := range allProjects {
 		if p.basePath != "" {
 			fmt.Fprintf(os.Stderr, "  project=%s  (%s)\n", p.name, p.basePath)
@@ -799,7 +814,7 @@ func runExec(cmd *cobra.Command, args []string) {
 		"timeout": timeout,
 	}
 
-	request["project"] = project
+	request["project"] = projectPath
 
 	body, err := makeRequest("POST", "/execute", request)
 	if err != nil {
@@ -929,7 +944,7 @@ func buildActionListFromFS(fsys fs.FS, subdir string, isProjectDir bool) (string
 		if isProjectDir || len(params) > 0 {
 			fmt.Fprintf(&buf, "    Parameters:\n")
 			if isProjectDir {
-				fmt.Fprintf(&buf, "      %-28s %s\n", "project=<string>", "project name or path (optional, auto-detected if only one open)")
+				fmt.Fprintf(&buf, "      %-28s %s\n", "project=<string>", "optional; auto-discovered from CWD. Override with project name or path")
 			}
 			for _, p := range params {
 				t := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(p.typeName, "?"), " "))
@@ -982,7 +997,7 @@ func buildActionHelp(name string) (string, bool) {
 	if isProjectAction || len(params) > 0 {
 		fmt.Fprintf(&buf, "\nParameters:\n")
 		if isProjectAction {
-			fmt.Fprintf(&buf, "  %-28s %s\n", "project=<string>", "project name or path (optional, auto-detected if only one open)")
+			fmt.Fprintf(&buf, "  %-28s %s\n", "project=<string>", "optional; auto-discovered from CWD. Override with project name or path")
 		}
 		for _, p := range params {
 			t := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(p.typeName, "?"), " "))
@@ -1031,7 +1046,7 @@ func buildActionListFromDir(dir string, isProjectDir bool) (string, int) {
 		if isProjectDir || len(params) > 0 {
 			fmt.Fprintf(&buf, "    Parameters:\n")
 			if isProjectDir {
-				fmt.Fprintf(&buf, "      %-28s %s\n", "project=<string>", "project name or path (optional, auto-detected if only one open)")
+				fmt.Fprintf(&buf, "      %-28s %s\n", "project=<string>", "optional; auto-discovered from CWD. Override with project name or path")
 			}
 			for _, p := range params {
 				t := strings.ToLower(strings.TrimSuffix(strings.TrimSuffix(p.typeName, "?"), " "))
@@ -1108,7 +1123,7 @@ func buildSkillContent() string {
 	buf.WriteString("The IDE and project are auto-detected from the current working directory (CWD).\n")
 	buf.WriteString("Nothing extra is needed when only one IDE or project is open.\n")
 	buf.WriteString("If auto-detection fails, the default fallback port is 8568 (IntelliJ IDEA).\n\n")
-	buf.WriteString("If multiple IDEs or projects are running, pass the port or project path explicitly:\n\n")
+	buf.WriteString("If multiple IDEs or projects are running, pass the project absolute path or port explicitly:\n\n")
 	buf.WriteString("```\n")
 	buf.WriteString("intellij-cli -P 8571 action find_references file=src/Foo.kt line=42 column=15\n")
 	buf.WriteString("intellij-cli action find_references project=/path/to/project file=src/Foo.kt line=42 column=15\n")
@@ -1270,7 +1285,7 @@ func runActionCmd(cmd *cobra.Command, args []string) {
 		"timeout": timeout,
 	}
 	if isProjectAction {
-		request["project"] = project
+		request["project"] = projectPath
 	}
 
 	body, err := makeRequest("POST", "/execute", request)
