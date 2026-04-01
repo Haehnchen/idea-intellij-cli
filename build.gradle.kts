@@ -1,7 +1,7 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.2.20"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.20"
+    id("org.jetbrains.kotlin.jvm") version "2.3.20"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.3.20"
     id("org.jetbrains.intellij.platform") version "2.13.1"
 }
 
@@ -18,7 +18,12 @@ repositories {
 // Read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin.html
 dependencies {
     intellijPlatform {
-        intellijIdea("2025.3.4")
+        val version = providers.gradleProperty("platformVersion")
+        val type = providers.gradleProperty("platformType")
+        create(type, version) {
+            useInstaller = true
+            useCache = true
+        }
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
         // Add plugin dependencies for compilation here, example:
@@ -29,15 +34,15 @@ dependencies {
     implementation("io.javalin:javalin:7.1.0")
 
     // Kotlin scripting for code execution
-    implementation("org.jetbrains.kotlin:kotlin-scripting-common:2.2.20")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm:2.2.20")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm-host:2.2.20")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.2.20")
-    implementation("org.jetbrains.kotlin:kotlin-script-runtime:2.2.20")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-common:2.3.20")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm:2.3.20")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm-host:2.3.20")
+    implementation("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.3.20")
+    implementation("org.jetbrains.kotlin:kotlin-script-runtime:2.3.20")
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.3.20")
 
     // JSON serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
 }
 
 intellijPlatform {

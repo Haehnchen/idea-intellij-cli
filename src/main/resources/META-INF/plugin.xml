@@ -95,5 +95,18 @@
             instance="de.espend.intellij.cli.settings.PluginSettingsConfigurable"
             id="de.espend.intellij.cli.settings.PluginSettingsConfigurable"
             displayName="Agent CLI"/>
+
+        <!--
+            IntelliJ 2025.3 defines this registry key in util-8.jar's registry.properties,
+            but the IntelliJ Platform Gradle Plugin's artifact transform strips .properties
+            files from platform JARs when building the test classpath. Declaring it here
+            ensures the key is available in the test environment via the extension-point
+            registry key mechanism, which is checked alongside the bundle.
+            In production the key is already defined by the platform; duplicates are harmless.
+        -->
+        <registryKey key="intellij.platform.shared.source.support"
+                     defaultValue="false"
+                     description="Enables shared source support (IntelliJ 2025.3+)"
+                     restartRequired="true"/>
     </extensions>
 </idea-plugin>
