@@ -1119,6 +1119,11 @@ func buildSkillContent() string {
 	buf.WriteString(buildListActionsOutput())
 	buf.WriteString("```\n")
 
+	buf.WriteString("\n`intellij-cli` talks to the IDE over localhost HTTP, typically `127.0.0.1:8568`.\n")
+	buf.WriteString("Do not run `intellij-cli` in the sandbox; use an unsandboxed command first.\n")
+	buf.WriteString("Sandboxed runs may fail with `No running IDEs found`, `socket: operation not permitted`, or failed `health` requests.\n")
+	buf.WriteString("Only conclude that no IDE is running if the unsandboxed command also fails.\n")
+
 	buf.WriteString("\n## IDE and Project Auto-Detection\n\n")
 	buf.WriteString("The IDE and project are auto-detected from the current working directory (CWD).\n")
 	buf.WriteString("Nothing extra is needed when only one IDE or project is open.\n")
