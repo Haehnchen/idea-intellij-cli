@@ -15,6 +15,9 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.UIUtil
 import de.espend.intellij.cli.util.BinaryInstaller
+import de.espend.intellij.cli.update.GitHubPluginReleaseClient
+import de.espend.intellij.cli.update.PluginUpdateOutcome
+import de.espend.intellij.cli.update.PluginUpdateService
 import java.awt.FlowLayout
 import javax.swing.JButton
 import javax.swing.JComponent
@@ -33,6 +36,9 @@ class PluginSettingsConfigurable : Configurable {
     private var installStatusLabel: JBLabel? = null
     private var checkVersionButton: JButton? = null
     private var checkVersionResultLabel: JBLabel? = null
+
+    private var pluginUpdateButton: JButton? = null
+    private var pluginUpdateStatusLabel: JBLabel? = null
 
     override fun getDisplayName(): String = "Agent CLI"
 
@@ -63,6 +69,32 @@ class PluginSettingsConfigurable : Configurable {
         showExecutionIndicatorCheckBox = JBCheckBox("Show background task indicator during script execution")
 
         executionIndicatorHintLabel = JBLabel("Displays a progress indicator in the IDE status bar while a script is running").apply {
+            foreground = UIUtil.getContextHelpForeground()
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+        }
+
+        // --- Plugin updater section ---
+
+        val pluginReleasesLink = ActionLink("GitHub Releases") {
+            BrowserUtil.browse(GitHubPluginReleaseClient.RELEASES_PAGE_URL)
+        }.apply {
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+        }
+
+        val pluginUpdateHintPanel = JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
+            isOpaque = false
+            add(JBLabel("Installed version: ${PluginUpdateService.instance.getInstalledVersion()} — ").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+            })
+            add(pluginReleasesLink)
+        }
+
+        pluginUpdateButton = JButton("Update Plugin from GitHub").apply {
+            addActionListener { onPluginUpdate() }
+        }
+
+        pluginUpdateStatusLabel = JBLabel("").apply {
             foreground = UIUtil.getContextHelpForeground()
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
         }
@@ -114,6 +146,11 @@ class PluginSettingsConfigurable : Configurable {
             .addVerticalGap(8)
             .addComponent(showExecutionIndicatorCheckBox!!)
             .addComponent(executionIndicatorHintLabel!!)
+            .addVerticalGap(16)
+            .addComponent(TitledSeparator("Agent CLI Plugin"))
+            .addComponent(pluginUpdateButton!!)
+            .addComponent(pluginUpdateHintPanel)
+            .addComponent(pluginUpdateStatusLabel!!)
             .addVerticalGap(16)
             .addComponent(TitledSeparator("intellij-cli Binary"))
             .addComponent(JBLabel("<html>The CLI binary is required to interact with the plugin from the terminal or AI agents.<br>Optionally, run <b>intellij-cli skill project</b> to generate a project skill file for your AI agent.</html>").apply {
@@ -180,6 +217,38 @@ class PluginSettingsConfigurable : Configurable {
         }
     }
 
+    private fun onPluginUpdate() {
+        pluginUpdateStatusLabel?.foreground = UIUtil.getContextHelpForeground()
+        pluginUpdateStatusLabel?.text = "Checking the latest GitHub release..."
+
+        PluginUpdateService.instance.updateInBackground(
+            progressCallback = { message ->
+                invokeLater {
+                    pluginUpdateStatusLabel?.foreground = UIUtil.getContextHelpForeground()
+                    pluginUpdateStatusLabel?.text = message
+                }
+            },
+            completion = { result ->
+                result.onSuccess { outcome ->
+                    pluginUpdateStatusLabel?.foreground = UIUtil.getContextHelpForeground()
+                    pluginUpdateStatusLabel?.text = when (outcome) {
+                        is PluginUpdateOutcome.UpToDate ->
+                            "Plugin is up to date (version ${outcome.installedVersion})."
+
+                        is PluginUpdateOutcome.Scheduled ->
+                            "Version ${outcome.newVersion} is ready. Restart the IDE to finish the update."
+
+                        is PluginUpdateOutcome.AlreadyScheduled ->
+                            "Version ${outcome.version} is already scheduled. Restart the IDE to finish the update."
+                    }
+                }.onFailure { error ->
+                    pluginUpdateStatusLabel?.foreground = JBColor.RED
+                    pluginUpdateStatusLabel?.text = "Error: ${error.message ?: "Unknown error"}"
+                }
+            }
+        )
+    }
+
     private fun updateHint() {
         val enabled = enabledCheckBox?.isSelected ?: false
         hintLabel?.text = if (enabled) "Server listening on " else "Server disabled, would listen on "
@@ -227,5 +296,7 @@ class PluginSettingsConfigurable : Configurable {
         installStatusLabel = null
         checkVersionButton = null
         checkVersionResultLabel = null
+        pluginUpdateButton = null
+        pluginUpdateStatusLabel = null
     }
 }

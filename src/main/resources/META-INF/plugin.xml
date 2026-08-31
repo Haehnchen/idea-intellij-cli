@@ -88,6 +88,7 @@
         <!-- Application Services -->
         <applicationService serviceImplementation="de.espend.intellij.cli.settings.PluginSettings"/>
         <postStartupActivity implementation="de.espend.intellij.cli.ServerStartupActivity"/>
+        <notificationGroup id="Agent CLI Updates" displayType="BALLOON" isLogByDefault="true"/>
 
         <!-- Settings -->
         <applicationConfigurable

@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import de.espend.intellij.cli.server.HttpServer
 import de.espend.intellij.cli.settings.PluginSettings
+import de.espend.intellij.cli.update.PluginUpdateService
 
 /**
  * Main plugin component that manages the HTTP server lifecycle.
@@ -66,5 +67,6 @@ class IntellijAgentCliPlugin : Disposable {
 class ServerStartupActivity : ProjectActivity {
     override suspend fun execute(project: Project) {
         IntellijAgentCliPlugin.instance.startServer()
+        PluginUpdateService.instance.scheduleStartupCheck(project)
     }
 }
