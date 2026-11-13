@@ -1,8 +1,8 @@
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.4.10"
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10"
-    id("org.jetbrains.intellij.platform") version "2.18.1"
+    id("org.jetbrains.kotlin.jvm") version "2.4.21"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.21"
+    id("org.jetbrains.intellij.platform") version "2.20.1"
 }
 
 group = "de.espend.intellij-agent-cli"
@@ -32,18 +32,18 @@ dependencies {
     }
 
     // HTTP Server
-    implementation("io.javalin:javalin:7.1.0")
+    implementation("io.javalin:javalin:7.2.4")
 
     // Kotlin scripting for code execution
-    implementation("org.jetbrains.kotlin:kotlin-scripting-common:2.4.10")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm:2.4.10")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jvm-host:2.4.10")
-    implementation("org.jetbrains.kotlin:kotlin-scripting-jsr223:2.4.10")
-    implementation("org.jetbrains.kotlin:kotlin-script-runtime:2.4.10")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
+    implementation(kotlin("scripting-common"))
+    implementation(kotlin("scripting-jvm"))
+    implementation(kotlin("scripting-jvm-host"))
+    implementation(kotlin("scripting-jsr223"))
+    implementation(kotlin("script-runtime"))
+    implementation(kotlin("stdlib"))
 
     // JSON serialization
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.13.0")
 
     testImplementation("junit:junit:4.13.2")
 }
@@ -51,7 +51,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = "262"
+            sinceBuild = providers.gradleProperty("pluginSinceBuild")
         }
 
         changeNotes = """
